@@ -3,6 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+import { Event } from 'vs/base/common/event';
 import { IMarkdownString } from 'vs/base/common/htmlContent';
 import { IDisposable } from 'vs/base/common/lifecycle';
 import { URI } from 'vs/base/common/uri';
@@ -551,6 +552,18 @@ export interface ITextModel {
 	mightContainRTL(): boolean;
 
 	/**
+	 * If true, the text model might contain LINE SEPARATOR (LS), PARAGRAPH SEPARATOR (PS), NEXT LINE (NEL).
+	 * If false, the text model definitely does not contain these.
+	 * @internal
+	 */
+	mightContainUnusualLineTerminators(): boolean;
+
+	/**
+	 * @internal
+	 */
+	removeUnusualLineTerminators(selections?: Selection[]): void;
+
+	/**
 	 * If true, the text model might contain non basic ASCII.
 	 * If false, the text model **contains only** basic ASCII.
 	 * @internal
@@ -827,7 +840,17 @@ export interface ITextModel {
 	/**
 	 * @internal
 	 */
-	setSemanticTokens(tokens: MultilineTokens2[] | null): void;
+	setSemanticTokens(tokens: MultilineTokens2[] | null, isComplete: boolean): void;
+
+	/**
+	 * @internal
+	 */
+	setPartialSemanticTokens(range: Range, tokens: MultilineTokens2[] | null): void;
+
+	/**
+	 * @internal
+	 */
+	hasSemanticTokens(): boolean;
 
 	/**
 	 * Flush all tokenization state.
@@ -1266,9 +1289,12 @@ export class ValidAnnotatedEditOperation implements IIdentifiedSingleEditOperati
 /**
  * @internal
  */
-export interface ITextBuffer {
+export interface IReadonlyTextBuffer {
+	onDidChangeContent: Event<void>;
 	equals(other: ITextBuffer): boolean;
 	mightContainRTL(): boolean;
+	mightContainUnusualLineTerminators(): boolean;
+	resetMightContainUnusualLineTerminators(): void;
 	mightContainNonBasicASCII(): boolean;
 	getBOM(): string;
 	getEOL(): string;
@@ -1289,10 +1315,15 @@ export interface ITextBuffer {
 	getLineLength(lineNumber: number): number;
 	getLineFirstNonWhitespaceColumn(lineNumber: number): number;
 	getLineLastNonWhitespaceColumn(lineNumber: number): number;
+	findMatchesLineByLine(searchRange: Range, searchData: SearchData, captureMatches: boolean, limitResultCount: number): FindMatch[];
+}
 
+/**
+ * @internal
+ */
+export interface ITextBuffer extends IReadonlyTextBuffer {
 	setEOL(newEOL: '\r\n' | '\n'): void;
 	applyEdits(rawOperations: ValidAnnotatedEditOperation[], recordTrimAutoWhitespace: boolean, computeUndoEdits: boolean): ApplyEditsResult;
-	findMatchesLineByLine(searchRange: Range, searchData: SearchData, captureMatches: boolean, limitResultCount: number): FindMatch[];
 }
 
 /**

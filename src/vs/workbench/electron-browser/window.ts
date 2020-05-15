@@ -14,7 +14,8 @@ import { IFileService } from 'vs/platform/files/common/files';
 import { toResource, IUntitledTextResourceEditorInput, SideBySideEditor, pathsToEditors } from 'vs/workbench/common/editor';
 import { IEditorService, IResourceEditorInputType } from 'vs/workbench/services/editor/common/editorService';
 import { ITelemetryService, crashReporterIdStorageKey } from 'vs/platform/telemetry/common/telemetry';
-import { IWindowSettings, IOpenFileRequest, IWindowsConfiguration, IAddFoldersRequest, IRunActionInWindowRequest, IRunKeybindingInWindowRequest, getTitleBarStyle } from 'vs/platform/windows/common/windows';
+import { IWindowSettings, IOpenFileRequest, IWindowsConfiguration, getTitleBarStyle } from 'vs/platform/windows/common/windows';
+import { IRunActionInWindowRequest, IRunKeybindingInWindowRequest, IAddFoldersRequest, INativeOpenFileRequest } from 'vs/platform/windows/node/window';
 import { ITitleService } from 'vs/workbench/services/title/common/titleService';
 import { IWorkbenchThemeService, VS_HC_THEME } from 'vs/workbench/services/themes/common/workbenchThemeService';
 import * as browser from 'vs/base/browser/browser';
@@ -77,7 +78,7 @@ export class NativeWindow extends Disposable {
 	private readonly addFoldersScheduler = this._register(new RunOnceScheduler(() => this.doAddFolders(), 100));
 	private pendingFoldersToAdd: URI[] = [];
 
-	private readonly closeEmptyWindowScheduler: RunOnceScheduler = this._register(new RunOnceScheduler(() => this.onAllEditorsClosed(), 50));
+	private readonly closeEmptyWindowScheduler = this._register(new RunOnceScheduler(() => this.onAllEditorsClosed(), 50));
 
 	private isDocumentedEdited = false;
 
@@ -140,7 +141,7 @@ export class NativeWindow extends Disposable {
 					}
 				}
 			} else {
-				args.push({ from: request.from }); // TODO@telemetry this is a bit weird to send this to every action?
+				args.push({ from: request.from });
 			}
 
 			try {
@@ -269,19 +270,17 @@ export class NativeWindow extends Disposable {
 			}));
 		}
 
-		// Document edited (macOS only): indicate for dirty working copies
-		if (isMacintosh) {
-			this._register(this.workingCopyService.onDidChangeDirty(workingCopy => {
-				const gotDirty = workingCopy.isDirty();
-				if (gotDirty && !(workingCopy.capabilities & WorkingCopyCapabilities.Untitled) && this.filesConfigurationService.getAutoSaveMode() === AutoSaveMode.AFTER_SHORT_DELAY) {
-					return; // do not indicate dirty of working copies that are auto saved after short delay
-				}
+		// Document edited: indicate for dirty working copies
+		this._register(this.workingCopyService.onDidChangeDirty(workingCopy => {
+			const gotDirty = workingCopy.isDirty();
+			if (gotDirty && !(workingCopy.capabilities & WorkingCopyCapabilities.Untitled) && this.filesConfigurationService.getAutoSaveMode() === AutoSaveMode.AFTER_SHORT_DELAY) {
+				return; // do not indicate dirty of working copies that are auto saved after short delay
+			}
 
-				this.updateDocumentEdited(gotDirty);
-			}));
+			this.updateDocumentEdited(gotDirty);
+		}));
 
-			this.updateDocumentEdited();
-		}
+		this.updateDocumentEdited();
 
 		// Detect minimize / maximize
 		this._register(Event.any(
@@ -427,8 +426,20 @@ export class NativeWindow extends Disposable {
 		this.updateTouchbarMenu();
 
 		// Crash reporter (if enabled)
-		if (!this.environmentService.disableCrashReporter && product.crashReporter && product.appCenter && this.configurationService.getValue('telemetry.enableCrashReporter')) {
-			this.setupCrashReporter(product.crashReporter.companyName, product.crashReporter.productName, product.appCenter);
+		if (!this.environmentService.disableCrashReporter && this.configurationService.getValue('telemetry.enableCrashReporter')) {
+			const companyName = product.crashReporter?.companyName || 'Microsoft';
+			const productName = product.crashReporter?.productName || product.nameShort;
+
+			// With appCenter enabled, crashes will be uploaded
+			if (product.appCenter) {
+				this.setupCrashReporter(companyName, productName, product.appCenter, undefined);
+			}
+
+			// With a provided crash reporter directory, crashes
+			// will be stored only locally in that folder
+			else if (this.environmentService.crashReporterDirectory) {
+				this.setupCrashReporter(companyName, productName, undefined, this.environmentService.crashReporterDirectory);
+			}
 		}
 	}
 
@@ -541,13 +552,14 @@ export class NativeWindow extends Disposable {
 		}
 	}
 
-	private async setupCrashReporter(companyName: string, productName: string, appCenterConfig: typeof product.appCenter): Promise<void> {
-		if (!appCenterConfig) {
-			return;
+	private async setupCrashReporter(companyName: string, productName: string, appCenter: typeof product.appCenter, crashesDirectory: undefined): Promise<void>;
+	private async setupCrashReporter(companyName: string, productName: string, appCenter: undefined, crashesDirectory: string): Promise<void>;
+	private async setupCrashReporter(companyName: string, productName: string, appCenter: typeof product.appCenter | undefined, crashesDirectory: string | undefined): Promise<void> {
+		let submitURL: string | undefined = undefined;
+		if (appCenter) {
+			submitURL = isWindows ? appCenter[process.arch === 'ia32' ? 'win32-ia32' : 'win32-x64'] : isLinux ? appCenter[`linux-x64`] : appCenter.darwin;
 		}
 
-		const appCenterURL = isWindows ? appCenterConfig[process.arch === 'ia32' ? 'win32-ia32' : 'win32-x64']
-			: isLinux ? appCenterConfig[`linux-x64`] : appCenterConfig.darwin;
 		const info = await this.telemetryService.getTelemetryInfo();
 		const crashReporterId = this.storageService.get(crashReporterIdStorageKey, StorageScope.GLOBAL)!;
 
@@ -555,11 +567,14 @@ export class NativeWindow extends Disposable {
 		const options: CrashReporterStartOptions = {
 			companyName,
 			productName,
-			submitURL: appCenterURL.concat('&uid=', crashReporterId, '&iid=', crashReporterId, '&sid=', info.sessionId),
+			submitURL: (submitURL?.concat('&uid=', crashReporterId, '&iid=', crashReporterId, '&sid=', info.sessionId)) || '',
 			extra: {
 				vscode_version: product.version,
 				vscode_commit: product.commit || ''
-			}
+			},
+
+			// If `crashesDirectory` is specified, we do not upload
+			uploadToServer: !crashesDirectory,
 		};
 
 		// start crash reporter in the main process first.
@@ -596,7 +611,7 @@ export class NativeWindow extends Disposable {
 		this.workspaceEditingService.addFolders(foldersToAdd);
 	}
 
-	private async onOpenFiles(request: IOpenFileRequest): Promise<void> {
+	private async onOpenFiles(request: INativeOpenFileRequest): Promise<void> {
 		const inputs: IResourceEditorInputType[] = [];
 		const diffMode = !!(request.filesToDiff && (request.filesToDiff.length === 2));
 

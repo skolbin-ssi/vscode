@@ -91,7 +91,7 @@ export class NativeBackupTracker extends BackupTracker implements IWorkbenchCont
 
 		// we ran a backup but received an error that we show to the user
 		if (backupError) {
-			this.showErrorDialog(localize('backupTrackerBackupFailed', "One or many editors that are dirty could not be saved to the backup location."), backupError);
+			this.showErrorDialog(localize('backupTrackerBackupFailed', "One or more dirty editors could not be saved to the back up location."), backupError);
 
 			return true; // veto (the backup failed)
 		}
@@ -101,7 +101,7 @@ export class NativeBackupTracker extends BackupTracker implements IWorkbenchCont
 		try {
 			return await this.confirmBeforeShutdown(workingCopies.filter(workingCopy => backups.indexOf(workingCopy) === -1));
 		} catch (error) {
-			this.showErrorDialog(localize('backupTrackerConfirmFailed', "One or many editors that are dirty could not be saved or reverted."), error);
+			this.showErrorDialog(localize('backupTrackerConfirmFailed', "One or more dirty editors could not be saved or reverted."), error);
 
 			return true; // veto (save or revert failed)
 		}
@@ -228,7 +228,7 @@ export class NativeBackupTracker extends BackupTracker implements IWorkbenchCont
 		// If we still have dirty working copies, save those directly
 		// unless the save was not successful (e.g. cancelled)
 		if (result !== false) {
-			await Promise.all(workingCopies.map(workingCopy => workingCopy.isDirty() ? workingCopy.save(saveOptions) : Promise.resolve(true)));
+			await Promise.all(workingCopies.map(workingCopy => workingCopy.isDirty() ? workingCopy.save(saveOptions) : true));
 		}
 	}
 
@@ -244,7 +244,7 @@ export class NativeBackupTracker extends BackupTracker implements IWorkbenchCont
 
 		// If we still have dirty working copies, revert those directly
 		// unless the revert operation was not successful (e.g. cancelled)
-		await Promise.all(workingCopies.map(workingCopy => workingCopy.isDirty() ? workingCopy.revert(revertOptions) : Promise.resolve()));
+		await Promise.all(workingCopies.map(workingCopy => workingCopy.isDirty() ? workingCopy.revert(revertOptions) : undefined));
 	}
 
 	private noVeto(backupsToDiscard: IWorkingCopy[]): boolean | Promise<boolean> {

@@ -183,7 +183,8 @@ export interface IQuickPickAcceptEvent {
 }
 
 export enum ItemActivation {
-	FIRST = 1,
+	NONE,
+	FIRST,
 	SECOND,
 	LAST
 }
@@ -306,7 +307,7 @@ export interface IQuickInputButton {
 	iconClass?: string;
 	tooltip?: string;
 	/**
-	 * Wether to always show the button. By default buttons
+	 * Whether to always show the button. By default buttons
 	 * are only visible when hovering over them with the mouse
 	 */
 	alwaysVisible?: boolean;
@@ -326,7 +327,7 @@ export type QuickPickInput<T = IQuickPickItem> = T | IQuickPickSeparator;
 
 //region Fuzzy Scorer Support
 
-export type IQuickPickItemWithResource = IQuickPickItem & { resource: URI | undefined };
+export type IQuickPickItemWithResource = IQuickPickItem & { resource?: URI };
 
 export class QuickPickItemScorerAccessor implements IItemAccessor<IQuickPickItemWithResource> {
 
