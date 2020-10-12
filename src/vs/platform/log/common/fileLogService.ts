@@ -17,7 +17,7 @@ const MAX_FILE_SIZE = 1024 * 1024 * 5;
 
 export class FileLogService extends AbstractLogService implements ILogService {
 
-	_serviceBrand: undefined;
+	declare readonly _serviceBrand: undefined;
 
 	private readonly initializePromise: Promise<void>;
 	private readonly queue: Queue<void>;
@@ -87,7 +87,9 @@ export class FileLogService extends AbstractLogService implements ILogService {
 	}
 
 	private async initialize(): Promise<void> {
-		await this.fileService.createFile(this.resource);
+		if (!await this.fileService.exists(this.resource)) {
+			await this.fileService.createFile(this.resource);
+		}
 	}
 
 	private _log(level: LogLevel, message: string): void {
@@ -157,7 +159,7 @@ export class FileLogService extends AbstractLogService implements ILogService {
 
 export class FileLoggerService extends Disposable implements ILoggerService {
 
-	_serviceBrand: undefined;
+	declare readonly _serviceBrand: undefined;
 
 	private readonly loggers = new Map<string, ILogger>();
 

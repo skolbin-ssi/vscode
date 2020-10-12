@@ -109,7 +109,7 @@ export class BackupFilesModel implements IBackupFilesModel {
 
 export class BackupFileService implements IBackupFileService {
 
-	_serviceBrand: undefined;
+	declare readonly _serviceBrand: undefined;
 
 	private impl: BackupFileServiceImpl | InMemoryBackupFileService;
 
@@ -128,7 +128,7 @@ export class BackupFileService implements IBackupFileService {
 	}
 
 	private initialize(): BackupFileServiceImpl | InMemoryBackupFileService {
-		const backupWorkspaceResource = this.environmentService.configuration.backupWorkspaceResource;
+		const backupWorkspaceResource = this.environmentService.backupWorkspaceHome;
 		if (backupWorkspaceResource) {
 			return new BackupFileServiceImpl(backupWorkspaceResource, this.hashPath, this.fileService, this.logService);
 		}
@@ -140,7 +140,7 @@ export class BackupFileService implements IBackupFileService {
 
 		// Re-init implementation (unless we are running in-memory)
 		if (this.impl instanceof BackupFileServiceImpl) {
-			const backupWorkspaceResource = this.environmentService.configuration.backupWorkspaceResource;
+			const backupWorkspaceResource = this.environmentService.backupWorkspaceHome;
 			if (backupWorkspaceResource) {
 				this.impl.initialize(backupWorkspaceResource);
 			} else {
@@ -188,7 +188,7 @@ class BackupFileServiceImpl extends Disposable implements IBackupFileService {
 	private static readonly PREAMBLE_META_SEPARATOR = ' '; // using a character that is know to be escaped in a URI as separator
 	private static readonly PREAMBLE_MAX_LENGTH = 10000;
 
-	_serviceBrand: undefined;
+	declare readonly _serviceBrand: undefined;
 
 	private backupWorkspacePath!: URI;
 
@@ -403,7 +403,7 @@ class BackupFileServiceImpl extends Disposable implements IBackupFileService {
 
 export class InMemoryBackupFileService implements IBackupFileService {
 
-	_serviceBrand: undefined;
+	declare readonly _serviceBrand: undefined;
 
 	private backups: Map<string, ITextSnapshot> = new Map();
 

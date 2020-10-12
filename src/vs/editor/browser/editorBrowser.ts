@@ -7,7 +7,6 @@ import { IKeyboardEvent } from 'vs/base/browser/keyboardEvent';
 import { IMouseEvent, IMouseWheelEvent } from 'vs/base/browser/mouseEvent';
 import { IDisposable } from 'vs/base/common/lifecycle';
 import { OverviewRulerPosition, ConfigurationChangedEvent, EditorLayoutInfo, IComputedEditorOptions, EditorOption, FindComputedEditorOptionValueById, IEditorOptions, IDiffEditorOptions } from 'vs/editor/common/config/editorOptions';
-import { ICursors } from 'vs/editor/common/controller/cursorCommon';
 import { ICursorPositionChangedEvent, ICursorSelectionChangedEvent } from 'vs/editor/common/controller/cursorEvents';
 import { IPosition, Position } from 'vs/editor/common/core/position';
 import { IRange, Range } from 'vs/editor/common/core/range';
@@ -337,6 +336,26 @@ export interface IEditorAriaOptions {
 	role?: string;
 }
 
+export interface IEditorConstructionOptions extends IEditorOptions {
+	/**
+	 * The initial editor dimension (to avoid measuring the container).
+	 */
+	dimension?: editorCommon.IDimension;
+	/**
+	 * Place overflow widgets inside an external DOM node.
+	 * Defaults to an internal DOM node.
+	 */
+	overflowWidgetsDomNode?: HTMLElement;
+}
+
+export interface IDiffEditorConstructionOptions extends IDiffEditorOptions {
+	/**
+	 * Place overflow widgets inside an external DOM node.
+	 * Defaults to an internal DOM node.
+	 */
+	overflowWidgetsDomNode?: HTMLElement;
+}
+
 /**
  * A rich code editor.
  */
@@ -434,7 +453,6 @@ export interface ICodeEditor extends editorCommon.IEditor {
 	/**
 	 * An event emitted when editing failed because the editor is read-only.
 	 * @event
-	 * @internal
 	 */
 	onDidAttemptReadOnlyEdit(listener: () => void): IDisposable;
 	/**
@@ -572,6 +590,11 @@ export interface ICodeEditor extends editorCommon.IEditor {
 	/**
 	 * @internal
 	 */
+	getOverflowWidgetsDomNode(): HTMLElement | undefined;
+
+	/**
+	 * @internal
+	 */
 	getConfiguredWordAtPosition(position: Position): IWordAtPosition | null;
 
 	/**
@@ -662,11 +685,6 @@ export interface ICodeEditor extends editorCommon.IEditor {
 	 * @param command The commands to execute
 	 */
 	executeCommands(source: string | null | undefined, commands: (editorCommon.ICommand | null)[]): void;
-
-	/**
-	 * @internal
-	 */
-	_getCursors(): ICursors | null;
 
 	/**
 	 * @internal
@@ -864,11 +882,6 @@ export interface IActiveCodeEditor extends ICodeEditor {
 	/**
 	 * @internal
 	 */
-	_getCursors(): ICursors;
-
-	/**
-	 * @internal
-	 */
 	_getViewModel(): IViewModel;
 
 	/**
@@ -1050,6 +1063,17 @@ export function getCodeEditor(thing: any): ICodeEditor | null {
 
 	if (isDiffEditor(thing)) {
 		return thing.getModifiedEditor();
+	}
+
+	return null;
+}
+
+/**
+ *@internal
+ */
+export function getIEditor(thing: any): editorCommon.IEditor | null {
+	if (isCodeEditor(thing) || isDiffEditor(thing)) {
+		return thing;
 	}
 
 	return null;

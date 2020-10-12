@@ -25,6 +25,7 @@ import { setup as setupDataMigrationTests } from './areas/workbench/data-migrati
 import { setup as setupDataLossTests } from './areas/workbench/data-loss.test';
 import { setup as setupDataPreferencesTests } from './areas/preferences/preferences.test';
 import { setup as setupDataSearchTests } from './areas/search/search.test';
+import { setup as setupDataNotebookTests } from './areas/notebook/notebook.test';
 import { setup as setupDataLanguagesTests } from './areas/languages/languages.test';
 import { setup as setupDataEditorTests } from './areas/editor/editor.test';
 import { setup as setupDataStatusbarTests } from './areas/statusbar/statusbar.test';
@@ -63,7 +64,7 @@ const opts = minimist(args, {
 	}
 });
 
-const testRepoUrl = 'https://github.com/Microsoft/vscode-smoketest-express';
+const testRepoUrl = 'https://github.com/microsoft/vscode-smoketest-express';
 const workspacePath = path.join(testDataPath, 'vscode-smoketest-express');
 const extensionsPath = path.join(testDataPath, 'extensions-dir');
 mkdirp.sync(extensionsPath);
@@ -315,6 +316,7 @@ describe(`VSCode Smoke Tests (${opts.web ? 'Web' : 'Electron'})`, () => {
 		if (!opts.web) { setupDataLossTests(); }
 		if (!opts.web) { setupDataPreferencesTests(); }
 		setupDataSearchTests();
+		setupDataNotebookTests();
 		setupDataLanguagesTests();
 		setupDataEditorTests();
 		setupDataStatusbarTests(!!opts.web);

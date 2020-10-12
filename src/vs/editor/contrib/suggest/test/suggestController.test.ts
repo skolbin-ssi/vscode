@@ -17,7 +17,7 @@ import { ISuggestMemoryService } from 'vs/editor/contrib/suggest/suggestMemory';
 import { DisposableStore } from 'vs/base/common/lifecycle';
 import { URI } from 'vs/base/common/uri';
 import { IEditorWorkerService } from 'vs/editor/common/services/editorWorkerService';
-import { mock } from 'vs/editor/contrib/suggest/test/suggestModel.test';
+import { mock } from 'vs/base/test/common/mock';
 import { Selection } from 'vs/editor/common/core/selection';
 import { CompletionProviderRegistry, CompletionItemKind, CompletionItemInsertTextRule } from 'vs/editor/common/modes';
 import { Event } from 'vs/base/common/event';
@@ -26,6 +26,7 @@ import { IMenuService, IMenu } from 'vs/platform/actions/common/actions';
 import { createTextModel } from 'vs/editor/test/common/editorTestUtils';
 import { Range } from 'vs/editor/common/core/range';
 import { timeout } from 'vs/base/common/async';
+import { NullLogService, ILogService } from 'vs/platform/log/common/log';
 
 suite('SuggestController', function () {
 
@@ -40,6 +41,7 @@ suite('SuggestController', function () {
 
 		const serviceCollection = new ServiceCollection(
 			[ITelemetryService, NullTelemetryService],
+			[ILogService, new NullLogService()],
 			[IStorageService, new InMemoryStorageService()],
 			[IKeybindingService, new MockKeybindingService()],
 			[IEditorWorkerService, new class extends mock<IEditorWorkerService>() {
