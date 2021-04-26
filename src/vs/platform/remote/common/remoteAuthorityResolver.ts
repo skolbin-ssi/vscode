@@ -12,10 +12,18 @@ export interface ResolvedAuthority {
 	readonly authority: string;
 	readonly host: string;
 	readonly port: number;
+	readonly connectionToken: string | undefined;
+}
+
+export enum RemoteTrustOption {
+	Unknown = 0,
+	DisableTrust = 1,
+	MachineTrusted = 2
 }
 
 export interface ResolvedOptions {
 	readonly extensionHostEnv?: { [key: string]: string | null };
+	readonly trust?: RemoteTrustOption;
 }
 
 export interface TunnelDescription {

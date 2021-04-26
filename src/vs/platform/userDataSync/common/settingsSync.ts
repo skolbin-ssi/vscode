@@ -13,7 +13,7 @@ import { VSBuffer } from 'vs/base/common/buffer';
 import { localize } from 'vs/nls';
 import { Event } from 'vs/base/common/event';
 import { IEnvironmentService } from 'vs/platform/environment/common/environment';
-import { IConfigurationService } from 'vs/platform/configuration/common/configuration';
+import { ConfigurationTarget, IConfigurationService } from 'vs/platform/configuration/common/configuration';
 import { CancellationToken } from 'vs/base/common/cancellation';
 import { updateIgnoredSettings, merge, getIgnoredSettings, isEmpty } from 'vs/platform/userDataSync/common/settingsMerge';
 import { edit } from 'vs/platform/userDataSync/common/content';
@@ -198,6 +198,7 @@ export class SettingsSynchroniser extends AbstractJsonFileSynchroniser implement
 				await this.backupLocal(JSON.stringify(this.toSettingsSyncContent(fileContent.value.toString())));
 			}
 			await this.updateLocalFileContent(content, fileContent, force);
+			await this.configurationService.reloadConfiguration(ConfigurationTarget.USER_LOCAL);
 			this.logService.info(`${this.syncResourceLogLabel}: Updated local settings`);
 		}
 
@@ -246,7 +247,7 @@ export class SettingsSynchroniser extends AbstractJsonFileSynchroniser implement
 		return [{ resource: this.extUri.joinPath(uri, 'settings.json'), comparableResource }];
 	}
 
-	async resolveContent(uri: URI): Promise<string | null> {
+	override async resolveContent(uri: URI): Promise<string | null> {
 		if (this.extUri.isEqual(this.remoteResource, uri) || this.extUri.isEqual(this.localResource, uri) || this.extUri.isEqual(this.acceptedResource, uri)) {
 			return this.resolvePreviewContent(uri);
 		}
@@ -270,7 +271,7 @@ export class SettingsSynchroniser extends AbstractJsonFileSynchroniser implement
 		return null;
 	}
 
-	protected async resolvePreviewContent(resource: URI): Promise<string | null> {
+	protected override async resolvePreviewContent(resource: URI): Promise<string | null> {
 		let content = await super.resolvePreviewContent(resource);
 		if (content) {
 			const formatUtils = await this.getFormattingOptions();

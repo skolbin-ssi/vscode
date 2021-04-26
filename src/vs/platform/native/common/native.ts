@@ -37,17 +37,21 @@ export interface ICommonNativeHostService {
 	readonly windowId: number;
 
 	// Events
-	readonly onWindowOpen: Event<number>;
+	readonly onDidOpenWindow: Event<number>;
 
-	readonly onWindowMaximize: Event<number>;
-	readonly onWindowUnmaximize: Event<number>;
+	readonly onDidMaximizeWindow: Event<number>;
+	readonly onDidUnmaximizeWindow: Event<number>;
 
-	readonly onWindowFocus: Event<number>;
-	readonly onWindowBlur: Event<number>;
+	readonly onDidFocusWindow: Event<number>;
+	readonly onDidBlurWindow: Event<number>;
 
-	readonly onOSResume: Event<unknown>;
+	readonly onDidChangeDisplay: Event<void>;
 
-	readonly onColorSchemeChange: Event<IColorScheme>;
+	readonly onDidResumeOS: Event<unknown>;
+
+	readonly onDidChangeColorScheme: Event<IColorScheme>;
+
+	readonly onDidChangePassword: Event<{ service: string, account: string }>;
 
 	// Window
 	getWindows(): Promise<IOpenedWindow[]>;
@@ -96,7 +100,7 @@ export interface ICommonNativeHostService {
 	moveItemToTrash(fullPath: string, deleteOnFail?: boolean): Promise<boolean>;
 
 	isAdmin(): Promise<boolean>;
-	writeElevated(source: URI, target: URI, options?: { overwriteReadonly?: boolean }): Promise<void>;
+	writeElevated(source: URI, target: URI, options?: { unlock?: boolean }): Promise<void>;
 
 	getOSProperties(): Promise<IOSProperties>;
 	getOSStatistics(): Promise<IOSStatistics>;
@@ -135,6 +139,7 @@ export interface ICommonNativeHostService {
 	// Development
 	openDevTools(options?: OpenDevToolsOptions): Promise<void>;
 	toggleDevTools(): Promise<void>;
+	toggleSharedProcessWindow(): Promise<void>;
 	sendInputEvent(event: MouseInputEvent): Promise<void>;
 
 	// Connectivity
@@ -149,5 +154,4 @@ export interface ICommonNativeHostService {
 	deletePassword(service: string, account: string): Promise<boolean>;
 	findPassword(service: string): Promise<string | null>;
 	findCredentials(service: string): Promise<Array<{ account: string, password: string }>>
-	readonly onDidChangePassword: Event<void>;
 }

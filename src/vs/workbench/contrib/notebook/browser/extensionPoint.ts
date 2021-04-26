@@ -28,6 +28,8 @@ namespace NotebookRendererContribution {
 	export const displayName = 'displayName';
 	export const mimeTypes = 'mimeTypes';
 	export const entrypoint = 'entrypoint';
+	export const hardDependencies = 'dependencies';
+	export const optionalDependencies = 'optionalDependencies';
 }
 
 export interface INotebookRendererContribution {
@@ -36,6 +38,20 @@ export interface INotebookRendererContribution {
 	readonly [NotebookRendererContribution.displayName]: string;
 	readonly [NotebookRendererContribution.mimeTypes]?: readonly string[];
 	readonly [NotebookRendererContribution.entrypoint]: string;
+	readonly [NotebookRendererContribution.hardDependencies]: readonly string[];
+	readonly [NotebookRendererContribution.optionalDependencies]: readonly string[];
+}
+
+enum NotebookMarkdownRendererContribution {
+	id = 'id',
+	displayName = 'displayName',
+	entrypoint = 'entrypoint',
+}
+
+export interface INotebookMarkdownRendererContribution {
+	readonly [NotebookMarkdownRendererContribution.id]?: string;
+	readonly [NotebookMarkdownRendererContribution.displayName]: string;
+	readonly [NotebookMarkdownRendererContribution.entrypoint]: string;
 }
 
 const notebookProviderContribution: IJSONSchema = {
@@ -129,6 +145,45 @@ const notebookRendererContribution: IJSONSchema = {
 				type: 'string',
 				description: nls.localize('contributes.notebook.renderer.entrypoint', 'File to load in the webview to render the extension.'),
 			},
+			[NotebookRendererContribution.hardDependencies]: {
+				type: 'array',
+				uniqueItems: true,
+				items: { type: 'string' },
+				markdownDescription: nls.localize('contributes.notebook.renderer.hardDependencies', 'List of kernel dependencies the renderer requires. If any of the dependencies are present in the `NotebookKernel.preloads`, the renderer can be used.'),
+			},
+			[NotebookRendererContribution.optionalDependencies]: {
+				type: 'array',
+				uniqueItems: true,
+				items: { type: 'string' },
+				markdownDescription: nls.localize('contributes.notebook.renderer.optionalDependencies', 'List of soft kernel dependencies the renderer can make use of. If any of the dependencies are present in the `NotebookKernel.preloads`, the renderer will be preferred over renderers that don\'t interact with the kernel.'),
+			},
+		}
+	}
+};
+const notebookMarkdownRendererContribution: IJSONSchema = {
+	description: nls.localize('contributes.notebook.markdownRenderer', 'Contributes a renderer for markdown cells in notebooks.'),
+	type: 'array',
+	defaultSnippets: [{ body: [{ id: '', displayName: '', entrypoint: '' }] }],
+	items: {
+		type: 'object',
+		required: [
+			NotebookMarkdownRendererContribution.id,
+			NotebookMarkdownRendererContribution.displayName,
+			NotebookMarkdownRendererContribution.entrypoint,
+		],
+		properties: {
+			[NotebookMarkdownRendererContribution.id]: {
+				type: 'string',
+				description: nls.localize('contributes.notebook.markdownRenderer.id', 'Unique identifier of the notebook markdown renderer.'),
+			},
+			[NotebookMarkdownRendererContribution.displayName]: {
+				type: 'string',
+				description: nls.localize('contributes.notebook.markdownRenderer.displayName', 'Human readable name of the notebook markdown renderer.'),
+			},
+			[NotebookMarkdownRendererContribution.entrypoint]: {
+				type: 'string',
+				description: nls.localize('contributes.notebook.markdownRenderer.entrypoint', 'File to load in the webview to render the extension.'),
+			},
 		}
 	}
 };
@@ -143,4 +198,10 @@ export const notebookRendererExtensionPoint = ExtensionsRegistry.registerExtensi
 	{
 		extensionPoint: 'notebookOutputRenderer',
 		jsonSchema: notebookRendererContribution
+	});
+
+export const notebookMarkdownRendererExtensionPoint = ExtensionsRegistry.registerExtensionPoint<INotebookMarkdownRendererContribution[]>(
+	{
+		extensionPoint: 'notebookMarkdownRenderer',
+		jsonSchema: notebookMarkdownRendererContribution
 	});

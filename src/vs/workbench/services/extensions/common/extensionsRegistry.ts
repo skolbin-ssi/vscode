@@ -301,9 +301,24 @@ export const schema: IJSONSchema = {
 						description: nls.localize('vscode.extension.activationEvents.onUri', 'An activation event emitted whenever a system-wide Uri directed towards this extension is open.'),
 					},
 					{
+						label: 'onOpenExternalUri',
+						body: 'onOpenExternalUri',
+						description: nls.localize('vscode.extension.activationEvents.onOpenExternalUri', 'An activation event emitted whenever a external uri (such as an http or https link) is being opened.'),
+					},
+					{
 						label: 'onCustomEditor',
 						body: 'onCustomEditor:${9:viewType}',
 						description: nls.localize('vscode.extension.activationEvents.onCustomEditor', 'An activation event emitted whenever the specified custom editor becomes visible.'),
+					},
+					{
+						label: 'onNotebook',
+						body: 'onNotebook:${10:viewType}',
+						description: nls.localize('vscode.extension.activationEvents.onNotebook', 'An activation event emitted whenever the specified notebook document is opened.'),
+					},
+					{
+						label: 'onAuthenticationRequest',
+						body: 'onAuthenticationRequest:${11:authenticationProviderId}',
+						description: nls.localize('vscode.extension.activationEvents.onAuthenticationRequest', 'An activation event emitted whenever sessions are requested from the specified authentication provider.')
 					},
 					{
 						label: '*',
@@ -399,6 +414,39 @@ export const schema: IJSONSchema = {
 					description: nls.localize('extensionKind.empty', "Define an extension which cannot run in a remote context, neither on the local, nor on the remote machine.")
 				}
 			]
+		},
+		capabilities: {
+			description: nls.localize('vscode.extension.capabilities', "Declare the set of supported capabilities by the extension."),
+			type: 'object',
+			properties: {
+				virtualWorkspaces: {
+					description: nls.localize('vscode.extension.capabilities.virtualWorkspaces', "Declare the support for virtual workspace. Default is to support."),
+					type: 'boolean',
+					default: true
+				},
+				untrustedWorkspaces: {
+					description: nls.localize('vscode.extension.capabilities.untrustedWorkspaces', 'Declares how the extension should be handled in untrusted workspaces.'),
+					type: 'object',
+					properties: {
+						supported: {
+							description: nls.localize('vscode.extension.capabilities.untrustedWorkspaces.supported', "Declares the level of support for untrusted workspaces by the extension. `false` indicates the extension will be disabled in untrusted workspaces. `'limited'` indicates the extension will be enabled with some functionality removed."),
+							type: ['string', 'boolean'],
+							enum: ['limited', true, false]
+						},
+						restrictedConfigurations: {
+							description: nls.localize('vscode.extension.capabilities.untrustedWorkspaces.restrictedConfigurations', "A list of configuration keys contributed by the extension that should not use workspace values in untrusted workspaces."),
+							type: 'array',
+							items: {
+								type: 'string'
+							}
+						},
+						description: {
+							type: 'string',
+							description: nls.localize('vscode.extension.capabilities.untrustedWorkspaces.description', "A description of how workspace trust affects the extensions behavior and why it is needed. This only applies when `supported` is not `true`."),
+						}
+					}
+				}
+			}
 		},
 		scripts: {
 			type: 'object',

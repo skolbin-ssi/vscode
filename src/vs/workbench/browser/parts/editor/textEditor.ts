@@ -10,7 +10,8 @@ import { Event } from 'vs/base/common/event';
 import { isObject, assertIsDefined, withNullAsUndefined, isFunction } from 'vs/base/common/types';
 import { Dimension } from 'vs/base/browser/dom';
 import { CodeEditorWidget } from 'vs/editor/browser/widget/codeEditorWidget';
-import { EditorInput, EditorOptions, IEditorMemento, ITextEditorPane, TextEditorOptions, IEditorCloseEvent, IEditorInput, computeEditorAriaLabel, IEditorOpenContext, EditorResourceAccessor, SideBySideEditor } from 'vs/workbench/common/editor';
+import { EditorInput, EditorOptions, IEditorMemento, ITextEditorPane, TextEditorOptions, IEditorCloseEvent, IEditorInput, IEditorOpenContext, EditorResourceAccessor, SideBySideEditor } from 'vs/workbench/common/editor';
+import { computeEditorAriaLabel } from 'vs/workbench/browser/editor';
 import { EditorPane } from 'vs/workbench/browser/parts/editor/editorPane';
 import { IEditorViewState, IEditor, ScrollType } from 'vs/editor/common/editorCommon';
 import { IStorageService } from 'vs/platform/storage/common/storage';
@@ -52,7 +53,7 @@ export abstract class BaseTextEditor extends EditorPane implements ITextEditorPa
 	protected get instantiationService(): IInstantiationService { return this._instantiationService; }
 	protected set instantiationService(value: IInstantiationService) { this._instantiationService = value; }
 
-	get scopedContextKeyService(): IContextKeyService | undefined {
+	override get scopedContextKeyService(): IContextKeyService | undefined {
 		return isCodeEditor(this.editorControl) ? this.editorControl.invokeWithinContext(accessor => accessor.get(IContextKeyService)) : undefined;
 	}
 
@@ -62,11 +63,12 @@ export abstract class BaseTextEditor extends EditorPane implements ITextEditorPa
 		@IInstantiationService instantiationService: IInstantiationService,
 		@IStorageService storageService: IStorageService,
 		@ITextResourceConfigurationService protected readonly textResourceConfigurationService: ITextResourceConfigurationService,
-		@IThemeService protected themeService: IThemeService,
+		@IThemeService themeService: IThemeService,
 		@IEditorService protected editorService: IEditorService,
 		@IEditorGroupsService protected editorGroupService: IEditorGroupsService
 	) {
 		super(id, telemetryService, themeService, storageService);
+
 		this._instantiationService = instantiationService;
 
 		this.editorMemento = this.getEditorMemento<IEditorViewState>(editorGroupService, BaseTextEditor.TEXT_EDITOR_VIEW_STATE_PREFERENCE_KEY, 100);
@@ -157,7 +159,7 @@ export abstract class BaseTextEditor extends EditorPane implements ITextEditorPa
 		return this.instantiationService.createInstance(CodeEditorWidget, parent, configuration, {});
 	}
 
-	async setInput(input: EditorInput, options: EditorOptions | undefined, context: IEditorOpenContext, token: CancellationToken): Promise<void> {
+	override async setInput(input: EditorInput, options: EditorOptions | undefined, context: IEditorOpenContext, token: CancellationToken): Promise<void> {
 		await super.setInput(input, options, context, token);
 
 		// Update editor options after having set the input. We do this because there can be
@@ -169,7 +171,7 @@ export abstract class BaseTextEditor extends EditorPane implements ITextEditorPa
 		editorContainer.setAttribute('aria-label', this.computeAriaLabel());
 	}
 
-	setOptions(options: EditorOptions | undefined): void {
+	override setOptions(options: EditorOptions | undefined): void {
 		const textOptions = options as TextEditorOptions;
 		if (textOptions && isFunction(textOptions.apply)) {
 			const textEditor = assertIsDefined(this.getControl());
@@ -177,7 +179,7 @@ export abstract class BaseTextEditor extends EditorPane implements ITextEditorPa
 		}
 	}
 
-	protected setEditorVisible(visible: boolean, group: IEditorGroup | undefined): void {
+	protected override setEditorVisible(visible: boolean, group: IEditorGroup | undefined): void {
 
 		// Pass on to Editor
 		const editorControl = assertIsDefined(this.editorControl);
@@ -205,7 +207,7 @@ export abstract class BaseTextEditor extends EditorPane implements ITextEditorPa
 		// Subclasses can override
 	}
 
-	focus(): void {
+	override focus(): void {
 
 		// Pass on to Editor
 		const editorControl = assertIsDefined(this.editorControl);
@@ -219,17 +221,30 @@ export abstract class BaseTextEditor extends EditorPane implements ITextEditorPa
 		editorControl.layout(dimension);
 	}
 
-	getControl(): IEditor | undefined {
+	override getControl(): IEditor | undefined {
 		return this.editorControl;
 	}
 
-	protected saveTextEditorViewState(resource: URI): void {
+	getViewState(): IEditorViewState | undefined {
+		const resource = this.input?.resource;
+		if (resource) {
+			return withNullAsUndefined(this.retrieveTextEditorViewState(resource));
+		}
+
+		return undefined;
+	}
+
+	protected saveTextEditorViewState(resource: URI, cleanUpOnDispose?: IEditorInput): void {
 		const editorViewState = this.retrieveTextEditorViewState(resource);
 		if (!editorViewState || !this.group) {
 			return;
 		}
 
 		this.editorMemento.saveEditorState(this.group, resource, editorViewState);
+
+		if (cleanUpOnDispose) {
+			this.editorMemento.clearEditorStateOnDispose(resource, cleanUpOnDispose);
+		}
 	}
 
 	protected shouldRestoreTextEditorViewState(editor: IEditorInput, context?: IEditorOpenContext): boolean {
@@ -241,15 +256,6 @@ export abstract class BaseTextEditor extends EditorPane implements ITextEditorPa
 
 		// existing editor: always restore viewstate
 		return true;
-	}
-
-	getViewState(): IEditorViewState | undefined {
-		const resource = this.input?.resource;
-		if (resource) {
-			return withNullAsUndefined(this.retrieveTextEditorViewState(resource));
-		}
-
-		return undefined;
 	}
 
 	protected retrieveTextEditorViewState(resource: URI): IEditorViewState | null {
@@ -284,9 +290,9 @@ export abstract class BaseTextEditor extends EditorPane implements ITextEditorPa
 	}
 
 	protected clearTextEditorViewState(resources: URI[], group?: IEditorGroup): void {
-		resources.forEach(resource => {
+		for (const resource of resources) {
 			this.editorMemento.clearEditorState(resource, group);
-		});
+		}
 	}
 
 	private updateEditorConfiguration(configuration?: IEditorConfiguration): void {
@@ -333,7 +339,7 @@ export abstract class BaseTextEditor extends EditorPane implements ITextEditorPa
 		return undefined;
 	}
 
-	dispose(): void {
+	override dispose(): void {
 		this.lastAppliedEditorOptions = undefined;
 
 		super.dispose();

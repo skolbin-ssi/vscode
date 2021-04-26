@@ -25,8 +25,6 @@ import { IPathService } from 'vs/workbench/services/path/common/pathService';
 
 export class FileDialogService extends AbstractFileDialogService implements IFileDialogService {
 
-	declare readonly _serviceBrand: undefined;
-
 	constructor(
 		@IHostService hostService: IHostService,
 		@IWorkspaceContextService contextService: IWorkspaceContextService,
@@ -68,7 +66,7 @@ export class FileDialogService extends AbstractFileDialogService implements IFil
 		const schema = this.getFileSystemSchema(options);
 
 		if (!options.defaultUri) {
-			options.defaultUri = this.defaultFilePath(schema);
+			options.defaultUri = await this.defaultFilePath(schema);
 		}
 
 		const shouldUseSimplified = this.shouldUseSimplified(schema);
@@ -82,7 +80,7 @@ export class FileDialogService extends AbstractFileDialogService implements IFil
 		const schema = this.getFileSystemSchema(options);
 
 		if (!options.defaultUri) {
-			options.defaultUri = this.defaultFilePath(schema);
+			options.defaultUri = await this.defaultFilePath(schema);
 		}
 
 		const shouldUseSimplified = this.shouldUseSimplified(schema);
@@ -96,7 +94,7 @@ export class FileDialogService extends AbstractFileDialogService implements IFil
 		const schema = this.getFileSystemSchema(options);
 
 		if (!options.defaultUri) {
-			options.defaultUri = this.defaultFolderPath(schema);
+			options.defaultUri = await this.defaultFolderPath(schema);
 		}
 
 		if (this.shouldUseSimplified(schema).useSimplified) {
@@ -109,7 +107,7 @@ export class FileDialogService extends AbstractFileDialogService implements IFil
 		const schema = this.getFileSystemSchema(options);
 
 		if (!options.defaultUri) {
-			options.defaultUri = this.defaultWorkspacePath(schema);
+			options.defaultUri = await this.defaultWorkspacePath(schema);
 		}
 
 		if (this.shouldUseSimplified(schema).useSimplified) {

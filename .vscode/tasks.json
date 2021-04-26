@@ -62,7 +62,8 @@
 			"group": {
 				"kind": "build",
 				"isDefault": true
-			}
+			},
+			"problemMatcher": []
 		},
 		{
 			"type": "npm",
@@ -90,7 +91,8 @@
 				"Kill Build VS Code Core",
 				"Kill Build VS Code Extensions"
 			],
-			"group": "build"
+			"group": "build",
+			"problemMatcher": []
 		},
 		{
 			"type": "npm",
@@ -203,11 +205,26 @@
 					"base": "$tsc",
 					"applyTo": "allDocuments",
 					"owner": "tsec"
-				},
+				}
 			],
 			"group": "build",
 			"label": "npm: tsec-compile-check",
 			"detail": "node_modules/tsec/bin/tsec -p src/tsconfig.json --noEmit"
+		},
+		{
+			"type": "npm",
+			"script": "no-implicit-override-watch",
+			"problemMatcher": [
+				{
+					"base": "$tsc-watch",
+					"applyTo": "allDocuments",
+					"owner": "tsc-no-imp"
+				}
+			],
+			"group": "build",
+			"label": "npm: no-implicit-override-watch",
+			"detail": "tsc --watch -p src/tsconfig.json --noEmit --noImplicitOverride",
+			"isBackground": true
 		}
 	]
 }

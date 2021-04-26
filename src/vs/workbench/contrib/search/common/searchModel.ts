@@ -31,6 +31,7 @@ import { IConfigurationService } from 'vs/platform/configuration/common/configur
 import { compareFileNames, compareFileExtensions, comparePaths } from 'vs/base/common/comparers';
 import { IFileService, IFileStatWithMetadata } from 'vs/platform/files/common/files';
 import { Schemas } from 'vs/base/common/network';
+import { IUriIdentityService } from 'vs/workbench/services/uriIdentity/common/uriIdentity';
 
 export class Match {
 
@@ -427,7 +428,7 @@ export class FileMatch extends Disposable implements IFileMatch {
 	}
 
 	async resolveFileStat(fileService: IFileService): Promise<void> {
-		this._fileStat = await fileService.resolve(this.resource, { resolveMetadata: true });
+		this._fileStat = await fileService.resolve(this.resource, { resolveMetadata: true }).catch(() => undefined);
 	}
 
 	public get fileStat(): IFileStatWithMetadata | undefined {
@@ -438,7 +439,7 @@ export class FileMatch extends Disposable implements IFileMatch {
 		this._fileStat = stat;
 	}
 
-	dispose(): void {
+	override dispose(): void {
 		this.setSelectedMatch(null);
 		this.unbindModel();
 		this._onDispose.fire();
@@ -629,7 +630,7 @@ export class FolderMatch extends Disposable {
 		this._unDisposedFileMatches.clear();
 	}
 
-	dispose(): void {
+	override dispose(): void {
 		this.disposeMatches();
 		this._onDispose.fire();
 		super.dispose();
@@ -648,7 +649,7 @@ export class FolderMatchWithResource extends FolderMatch {
 		super(_resource, _id, _index, _query, _parent, _searchModel, replaceService, instantiationService);
 	}
 
-	get resource(): URI {
+	override get resource(): URI {
 		return this._resource!;
 	}
 }
@@ -698,7 +699,7 @@ export class SearchResult extends Disposable {
 
 	private _folderMatches: FolderMatchWithResource[] = [];
 	private _otherFilesMatch: FolderMatch | null = null;
-	private _folderMatchesMap: TernarySearchTree<URI, FolderMatchWithResource> = TernarySearchTree.forUris<FolderMatchWithResource>();
+	private _folderMatchesMap: TernarySearchTree<URI, FolderMatchWithResource> = TernarySearchTree.forUris<FolderMatchWithResource>(key => this.uriIdentityService.extUri.ignorePathCasing(key));
 	private _showHighlights: boolean = false;
 	private _query: ITextQuery | null = null;
 
@@ -713,6 +714,7 @@ export class SearchResult extends Disposable {
 		@ITelemetryService private readonly telemetryService: ITelemetryService,
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
 		@IModelService private readonly modelService: IModelService,
+		@IUriIdentityService private readonly uriIdentityService: IUriIdentityService,
 	) {
 		super();
 		this._rangeHighlightDecorations = this.instantiationService.createInstance(RangeHighlightDecorations);
@@ -743,7 +745,7 @@ export class SearchResult extends Disposable {
 			.then(() => this._isDirty = false);
 
 		this._rangeHighlightDecorations.removeHighlightRange();
-		this._folderMatchesMap = TernarySearchTree.forUris<FolderMatchWithResource>();
+		this._folderMatchesMap = TernarySearchTree.forUris<FolderMatchWithResource>(key => this.uriIdentityService.extUri.ignorePathCasing(key));
 
 		if (!query) {
 			return;
@@ -965,11 +967,11 @@ export class SearchResult extends Disposable {
 	private disposeMatches(): void {
 		this.folderMatches().forEach(folderMatch => folderMatch.dispose());
 		this._folderMatches = [];
-		this._folderMatchesMap = TernarySearchTree.forUris<FolderMatchWithResource>();
+		this._folderMatchesMap = TernarySearchTree.forUris<FolderMatchWithResource>(key => this.uriIdentityService.extUri.ignorePathCasing(key));
 		this._rangeHighlightDecorations.removeHighlightRange();
 	}
 
-	dispose(): void {
+	override dispose(): void {
 		this.disposePastResults();
 		this.disposeMatches();
 		this._rangeHighlightDecorations.dispose();
@@ -1140,7 +1142,7 @@ export class SearchModel extends Disposable {
 		if (errors.isPromiseCanceledError(e)) {
 			this.onSearchCompleted(
 				this.searchCancelledForNewSearch
-					? { exit: SearchCompletionExitCode.NewSearchStarted, results: [] }
+					? { exit: SearchCompletionExitCode.NewSearchStarted, results: [], messages: [] }
 					: null,
 				duration);
 			this.searchCancelledForNewSearch = false;
@@ -1171,7 +1173,7 @@ export class SearchModel extends Disposable {
 		return false;
 	}
 
-	dispose(): void {
+	override dispose(): void {
 		this.cancelSearch();
 		this.searchResult.dispose();
 		super.dispose();
