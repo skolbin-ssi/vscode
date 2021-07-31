@@ -47,7 +47,7 @@ export class FileDialogService extends AbstractFileDialogService implements IFil
 
 		const [handle] = await window.showOpenFilePicker({ multiple: false });
 		const uuid = generateUuid();
-		const uri = URI.from({ scheme: Schemas.file, authority: uuid, path: `/${handle.name}` });
+		const uri = URI.from({ scheme: Schemas.file, path: `/${uuid}/${handle.name}` });
 
 		this.fileSystemProvider.registerFileHandle(uuid, handle);
 
@@ -69,6 +69,7 @@ export class FileDialogService extends AbstractFileDialogService implements IFil
 	}
 
 	async pickWorkspaceAndOpen(options: IPickAndOpenOptions): Promise<void> {
+		options.availableFileSystems = this.getWorkspaceAvailableFileSystems(options);
 		const schema = this.getFileSystemSchema(options);
 
 		if (!options.defaultUri) {
@@ -91,7 +92,7 @@ export class FileDialogService extends AbstractFileDialogService implements IFil
 
 		const handle = await window.showSaveFilePicker();
 		const uuid = generateUuid();
-		const uri = URI.from({ scheme: Schemas.file, authority: uuid, path: `/${handle.name}` });
+		const uri = URI.from({ scheme: Schemas.file, path: `/${uuid}/${handle.name}` });
 
 		this.fileSystemProvider.registerFileHandle(uuid, handle);
 
@@ -107,7 +108,7 @@ export class FileDialogService extends AbstractFileDialogService implements IFil
 
 		const handle = await window.showSaveFilePicker();
 		const uuid = generateUuid();
-		const uri = URI.from({ scheme: Schemas.file, authority: uuid, path: `/${handle.name}` });
+		const uri = URI.from({ scheme: Schemas.file, path: `/${uuid}/${handle.name}` });
 
 		this.fileSystemProvider.registerFileHandle(uuid, handle);
 
@@ -121,21 +122,28 @@ export class FileDialogService extends AbstractFileDialogService implements IFil
 			return this.showOpenDialogSimplified(schema, options);
 		}
 
-		const handle = await window.showDirectoryPicker();
+		let handleName: string | undefined;
 		const uuid = generateUuid();
-		const uri = URI.from({ scheme: Schemas.file, authority: uuid, path: `/${handle.name}` });
-
-		this.fileSystemProvider.registerDirectoryHandle(uuid, handle);
-
-		return [uri];
+		if (options.canSelectFiles) {
+			const handle = await window.showOpenFilePicker({ multiple: false });
+			if (handle.length === 1) {
+				handleName = handle[0].name;
+				this.fileSystemProvider.registerFileHandle(uuid, handle[0]);
+			}
+		} else {
+			const handle = await window.showDirectoryPicker();
+			handleName = handle.name;
+			this.fileSystemProvider.registerDirectoryHandle(uuid, handle);
+		}
+		if (handleName) {
+			const uri = URI.from({ scheme: Schemas.file, path: `/${uuid}/${handleName}` });
+			return [uri];
+		}
+		return undefined;
 	}
 
-	protected addFileSchemaIfNeeded(schema: string): string[] {
-		return schema === Schemas.untitled ? [Schemas.file] : [schema];
-	}
-
-	private shouldUseSimplified(schema: string): boolean {
-		return schema !== Schemas.file && schema !== Schemas.userData;
+	private shouldUseSimplified(scheme: string): boolean {
+		return ![Schemas.file, Schemas.userData, Schemas.tmp].includes(scheme);
 	}
 }
 

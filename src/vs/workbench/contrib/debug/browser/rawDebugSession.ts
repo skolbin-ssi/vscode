@@ -497,6 +497,22 @@ export class RawDebugSession implements IDisposable {
 		return Promise.reject(new Error('goto is not supported'));
 	}
 
+	async setInstructionBreakpoints(args: DebugProtocol.SetInstructionBreakpointsArguments): Promise<DebugProtocol.SetInstructionBreakpointsResponse | undefined> {
+		if (this.capabilities.supportsInstructionBreakpoints) {
+			return await this.send('setInstructionBreakpoints', args);
+		}
+
+		return Promise.reject(new Error('setInstructionBreakpoints is not supported'));
+	}
+
+	async disassemble(args: DebugProtocol.DisassembleArguments): Promise<DebugProtocol.DisassembleResponse | undefined> {
+		if (this.capabilities.supportsDisassembleRequest) {
+			return await this.send('disassemble', args);
+		}
+
+		return Promise.reject(new Error('disassemble is not supported'));
+	}
+
 	cancel(args: DebugProtocol.CancelArguments): Promise<DebugProtocol.CancelResponse | undefined> {
 		return this.send('cancel', args);
 	}
@@ -692,7 +708,7 @@ export class RawDebugSession implements IDisposable {
 			const label = error.urlLabel ? error.urlLabel : nls.localize('moreInfo', "More Info");
 			return errors.createErrorWithActions(userMessage, {
 				actions: [new Action('debug.moreInfo', label, undefined, true, async () => {
-					this.openerService.open(URI.parse(url));
+					this.openerService.open(URI.parse(url), { allowCommands: true });
 				})]
 			});
 		}

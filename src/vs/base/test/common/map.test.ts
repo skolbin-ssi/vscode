@@ -4,8 +4,10 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as assert from 'assert';
-import { ConfigKeysIterator, HashSet, LinkedMap, LRUCache, PathIterator, ResourceMap, StringIterator, TernarySearchTree, Touch, UriIterator } from 'vs/base/common/map';
+import { shuffle } from 'vs/base/common/arrays';
+import { ConfigKeysIterator, LinkedMap, LRUCache, PathIterator, ResourceMap, StringIterator, TernarySearchTree, Touch, UriIterator } from 'vs/base/common/map';
 import { extUriIgnorePathCase } from 'vs/base/common/resources';
+import { StopWatch } from 'vs/base/common/stopwatch';
 import { URI } from 'vs/base/common/uri';
 
 suite('Map', () => {
@@ -762,6 +764,9 @@ suite('Map', () => {
 
 		iter = map.findSuperstr(URI.file('/'))!;
 		item = iter.next();
+		assert.strictEqual(item.value[1], 4);
+		assert.strictEqual(item.done, false);
+		item = iter.next();
 		assert.strictEqual(item.value[1], 2);
 		assert.strictEqual(item.done, false);
 		item = iter.next();
@@ -769,9 +774,6 @@ suite('Map', () => {
 		assert.strictEqual(item.done, false);
 		item = iter.next();
 		assert.strictEqual(item.value[1], 3);
-		assert.strictEqual(item.done, false);
-		item = iter.next();
-		assert.strictEqual(item.value[1], 4);
 		assert.strictEqual(item.done, false);
 		item = iter.next();
 		assert.strictEqual(item.value, undefined);
@@ -1023,41 +1025,104 @@ suite('Map', () => {
 });
 
 
-suite('HashSet', () => {
+suite.skip('TST, perf', function () {
 
-	test('basics', () => {
-
-		interface Type {
-			value: string;
+	function createRandomUris(n: number): URI[] {
+		const uris: URI[] = [];
+		function randomWord(): string {
+			let result = '';
+			let length = 4 + Math.floor(Math.random() * 4);
+			for (let i = 0; i < length; i++) {
+				result += (Math.random() * 26 + 65).toString(36);
+			}
+			return result;
 		}
 
-		const hashSet = new HashSet<Type>([], t => t.value);
-		assert.strictEqual(hashSet.size, 0);
+		// generate 10000 random words
+		const words: string[] = [];
+		for (let i = 0; i < 10000; i++) {
+			words.push(randomWord());
+		}
 
-		const entry1 = { value: 'foo' };
-		const entry2 = { value: 'bar' };
+		for (let i = 0; i < n; i++) {
 
-		hashSet.add(entry1);
-		hashSet.add(entry2);
+			let len = 4 + Math.floor(Math.random() * 4);
 
-		assert.strictEqual(hashSet.size, 2);
-		assert.ok(hashSet.has(entry1));
-		assert.ok(hashSet.has(entry2));
+			let segments: string[] = [];
+			for (; len >= 0; len--) {
+				segments.push(words[Math.floor(Math.random() * words.length)]);
+			}
 
-		assert.strictEqual(hashSet.get(entry1), entry1);
-		assert.strictEqual(hashSet.get({ value: 'foo' }), entry1);
+			uris.push(URI.from({ scheme: 'file', path: segments.join('/') }));
+		}
 
-		hashSet.delete(entry1);
-		assert.strictEqual(hashSet.size, 1);
-		assert.ok(!hashSet.has(entry1));
-		assert.ok(hashSet.has(entry2));
+		return uris;
+	}
 
-		hashSet.clear();
-		assert.strictEqual(hashSet.size, 0);
+	let tree: TernarySearchTree<URI, boolean>;
+	let sampleUris: URI[] = [];
+	let candidates: URI[] = [];
 
-		const hashSetWithInitialValues = new HashSet<Type>([entry1, entry2], t => t.value);
-		assert.strictEqual(hashSetWithInitialValues.size, 2);
-		assert.ok(hashSetWithInitialValues.has(entry1));
-		assert.ok(hashSetWithInitialValues.has(entry2));
+	suiteSetup(() => {
+		const len = 50_000;
+		sampleUris = createRandomUris(len);
+		candidates = [...sampleUris.slice(0, len / 2), ...createRandomUris(len / 2)];
+		shuffle(candidates);
+	});
+
+	setup(() => {
+		tree = TernarySearchTree.forUris();
+		for (let uri of sampleUris) {
+			tree.set(uri, true);
+		}
+	});
+
+	const _profile = false;
+
+	function perfTest(name: string, callback: Function) {
+		test(name, function () {
+			if (_profile) { console.profile(name); }
+			const sw = new StopWatch(true);
+			callback();
+			console.log(name, sw.elapsed());
+			if (_profile) { console.profileEnd(); }
+		});
+	}
+
+	perfTest('TST, clear', function () {
+		tree.clear();
+	});
+
+	perfTest('TST, insert', function () {
+		let insertTree = TernarySearchTree.forUris();
+		for (let uri of sampleUris) {
+			insertTree.set(uri, true);
+		}
+	});
+
+	perfTest('TST, lookup', function () {
+		let match = 0;
+		for (let candidate of candidates) {
+			if (tree.has(candidate)) {
+				match += 1;
+			}
+		}
+		assert.strictEqual(match, sampleUris.length / 2);
+	});
+
+	perfTest('TST, substr', function () {
+		let match = 0;
+		for (let candidate of candidates) {
+			if (tree.findSubstr(candidate)) {
+				match += 1;
+			}
+		}
+		assert.strictEqual(match, sampleUris.length / 2);
+	});
+
+	perfTest('TST, superstr', function () {
+		for (let candidate of candidates) {
+			tree.findSuperstr(candidate);
+		}
 	});
 });

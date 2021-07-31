@@ -278,8 +278,8 @@ class WorkspaceProvider implements IWorkspaceProvider {
 	readonly trusted = true;
 
 	constructor(
-		public readonly workspace: IWorkspace,
-		public readonly payload: object
+		readonly workspace: IWorkspace,
+		readonly payload: object
 	) { }
 
 	async open(workspace: IWorkspace, options?: { reuse?: boolean, payload?: object }): Promise<boolean> {
@@ -502,25 +502,15 @@ class WindowIndicator implements IWindowIndicator {
 	// settings sync options
 	const settingsSyncOptions: ISettingsSyncOptions | undefined = config.settingsSyncOptions ? {
 		enabled: config.settingsSyncOptions.enabled,
-		enablementHandler: (enablement) => {
-			let queryString = `settingsSync=${enablement ? 'true' : 'false'}`;
-
-			// Save all other query params we might have
-			const query = new URL(document.location.href).searchParams;
-			query.forEach((value, key) => {
-				if (key !== 'settingsSync') {
-					queryString += `&${key}=${value}`;
-				}
-			});
-
-			window.location.href = `${window.location.origin}?${queryString}`;
-		}
 	} : undefined;
 
 	// Finally create workbench
 	create(document.body, {
 		...config,
-		logLevel: logLevel ? parseLogLevel(logLevel) : undefined,
+		developmentOptions: {
+			logLevel: logLevel ? parseLogLevel(logLevel) : undefined,
+			...config.developmentOptions
+		},
 		settingsSyncOptions,
 		homeIndicator,
 		windowIndicator,
