@@ -4,8 +4,8 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as minimist from 'minimist';
-import { localize } from 'vs/nls';
 import { isWindows } from 'vs/base/common/platform';
+import { localize } from 'vs/nls';
 import { NativeParsedArgs } from 'vs/platform/environment/common/argv';
 
 /**
@@ -86,8 +86,11 @@ export const OPTIONS: OptionDescriptions<Required<NativeParsedArgs>> = {
 	'extensionDevelopmentPath': { type: 'string[]' },
 	'extensionDevelopmentKind': { type: 'string[]' },
 	'extensionTestsPath': { type: 'string' },
+	'extensionEnvironment': { type: 'string' },
 	'debugId': { type: 'string' },
 	'debugRenderer': { type: 'boolean' },
+	'inspect-ptyhost': { type: 'string' },
+	'inspect-brk-ptyhost': { type: 'string' },
 	'inspect-search': { type: 'string', deprecates: 'debugSearch' },
 	'inspect-brk-search': { type: 'string', deprecates: 'debugBrkSearch' },
 	'export-default-configuration': { type: 'string' },

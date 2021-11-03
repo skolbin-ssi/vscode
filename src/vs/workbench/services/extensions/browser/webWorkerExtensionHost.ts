@@ -53,6 +53,7 @@ export class WebWorkerExtensionHost extends Disposable implements IExtensionHost
 
 	public readonly kind = ExtensionHostKind.LocalWebWorker;
 	public readonly remoteAuthority = null;
+	public readonly lazyStart: boolean;
 
 	private readonly _onDidExit = this._register(new Emitter<[number, string | null]>());
 	public readonly onExit: Event<[number, string | null]> = this._onDidExit.event;
@@ -65,6 +66,7 @@ export class WebWorkerExtensionHost extends Disposable implements IExtensionHost
 	private readonly _extensionHostLogFile: URI;
 
 	constructor(
+		lazyStart: boolean,
 		private readonly _initDataProvider: IWebWorkerExtensionHostDataProvider,
 		@ITelemetryService private readonly _telemetryService: ITelemetryService,
 		@IWorkspaceContextService private readonly _contextService: IWorkspaceContextService,
@@ -75,6 +77,7 @@ export class WebWorkerExtensionHost extends Disposable implements IExtensionHost
 		@ILayoutService private readonly _layoutService: ILayoutService,
 	) {
 		super();
+		this.lazyStart = lazyStart;
 		this._isTerminating = false;
 		this._protocolPromise = null;
 		this._protocol = null;
@@ -83,13 +86,18 @@ export class WebWorkerExtensionHost extends Disposable implements IExtensionHost
 	}
 
 	private _webWorkerExtensionHostIframeSrc(): string | null {
+		const suffix = this._environmentService.debugExtensionHost && this._environmentService.debugRenderer ? '?debugged=1' : '?';
 		if (this._environmentService.options && this._environmentService.options.webWorkerExtensionHostIframeSrc) {
-			return this._environmentService.options.webWorkerExtensionHostIframeSrc;
+			return this._environmentService.options.webWorkerExtensionHostIframeSrc + suffix;
 		}
 
 		const forceHTTPS = (location.protocol === 'https:');
 
-		if (this._environmentService.options && this._environmentService.options.__uniqueWebWorkerExtensionHostOrigin) {
+		let uniqueWebWorkerExtensionHostOrigin = true;
+		if (this._environmentService.options && typeof this._environmentService.options.__uniqueWebWorkerExtensionHostOrigin !== 'undefined') {
+			uniqueWebWorkerExtensionHostOrigin = this._environmentService.options.__uniqueWebWorkerExtensionHostOrigin;
+		}
+		if (uniqueWebWorkerExtensionHostOrigin) {
 			const webEndpointUrlTemplate = this._productService.webEndpointUrlTemplate;
 			const commit = this._productService.commit;
 			const quality = this._productService.quality;
@@ -100,11 +108,13 @@ export class WebWorkerExtensionHost extends Disposable implements IExtensionHost
 						.replace('{{commit}}', commit)
 						.replace('{{quality}}', quality)
 				);
-				return (
+				const base = (
 					forceHTTPS
 						? `${baseUrl}/out/vs/workbench/services/extensions/worker/httpsWebWorkerExtensionHostIframe.html`
 						: `${baseUrl}/out/vs/workbench/services/extensions/worker/httpWebWorkerExtensionHostIframe.html`
 				);
+
+				return base + suffix;
 			}
 		}
 
@@ -116,11 +126,13 @@ export class WebWorkerExtensionHost extends Disposable implements IExtensionHost
 			if (this._productService.commit) {
 				baseUrl += `/${this._productService.commit}`;
 			}
-			return (
+			const base = (
 				forceHTTPS
 					? `${baseUrl}/out/vs/workbench/services/extensions/worker/httpsWebWorkerExtensionHostIframe.html`
 					: `${baseUrl}/out/vs/workbench/services/extensions/worker/httpWebWorkerExtensionHostIframe.html`
 			);
+
+			return base + suffix;
 		}
 		return null;
 	}
@@ -152,7 +164,7 @@ export class WebWorkerExtensionHost extends Disposable implements IExtensionHost
 		iframe.style.display = 'none';
 
 		const vscodeWebWorkerExtHostId = generateUuid();
-		iframe.setAttribute('src', `${webWorkerExtensionHostIframeSrc}?vscodeWebWorkerExtHostId=${vscodeWebWorkerExtHostId}`);
+		iframe.setAttribute('src', `${webWorkerExtensionHostIframeSrc}&vscodeWebWorkerExtHostId=${vscodeWebWorkerExtHostId}`);
 
 		const barrier = new Barrier();
 		let port!: MessagePort;
@@ -242,7 +254,8 @@ export class WebWorkerExtensionHost extends Disposable implements IExtensionHost
 
 		const nestedWorker = new Map<string, Worker>();
 
-		const worker = new DefaultWorkerFactory('WorkerExtensionHost').create(
+		const name = this._environmentService.debugRenderer && this._environmentService.debugExtensionHost ? 'DebugWorkerExtensionHost' : 'WorkerExtensionHost';
+		const worker = new DefaultWorkerFactory(name).create(
 			'vs/workbench/services/extensions/worker/extensionHostWorker',
 			(data: MessagePort | NewWorkerMessage | TerminateWorkerMessage | any) => {
 
@@ -280,7 +293,12 @@ export class WebWorkerExtensionHost extends Disposable implements IExtensionHost
 			},
 			(event: any) => {
 				console.error(event.message, event.error);
-				this._onDidExit.fire([ExtensionHostExitCode.UnexpectedError, event.message || event.error]);
+
+				if (!barrier.isOpen()) {
+					// Only terminate the web worker extension host when an error occurs during handshake
+					// and setup. All other errors can be normal uncaught exceptions
+					this._onDidExit.fire([ExtensionHostExitCode.UnexpectedError, event.message || event.error]);
+				}
 			}
 		);
 
@@ -369,6 +387,7 @@ export class WebWorkerExtensionHost extends Disposable implements IExtensionHost
 			environment: {
 				isExtensionDevelopmentDebug: this._environmentService.debugRenderer,
 				appName: this._productService.nameLong,
+				appHost: this._productService.embedderIdentifier ?? (platform.isWeb ? 'web' : 'desktop'),
 				appUriScheme: this._productService.urlProtocol,
 				appLanguage: platform.language,
 				extensionDevelopmentLocationURI: this._environmentService.extensionDevelopmentLocationURI,
@@ -379,7 +398,8 @@ export class WebWorkerExtensionHost extends Disposable implements IExtensionHost
 			workspace: this._contextService.getWorkbenchState() === WorkbenchState.EMPTY ? undefined : {
 				configuration: workspace.configuration || undefined,
 				id: workspace.id,
-				name: this._labelService.getWorkspaceLabel(workspace)
+				name: this._labelService.getWorkspaceLabel(workspace),
+				transient: workspace.transient
 			},
 			resolvedExtensions: [],
 			hostExtensions: [],

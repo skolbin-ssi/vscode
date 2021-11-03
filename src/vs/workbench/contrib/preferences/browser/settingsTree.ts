@@ -5,7 +5,6 @@
 
 import { BrowserFeatures } from 'vs/base/browser/canIUse';
 import * as DOM from 'vs/base/browser/dom';
-import { renderMarkdown } from 'vs/base/browser/markdownRenderer';
 import { IMouseEvent } from 'vs/base/browser/mouseEvent';
 import { alert as ariaAlert } from 'vs/base/browser/ui/aria/aria';
 import { Button } from 'vs/base/browser/ui/button/button';
@@ -60,6 +59,8 @@ import { ILogService } from 'vs/platform/log/common/log';
 import { settingsMoreActionIcon } from 'vs/workbench/contrib/preferences/browser/preferencesIcons';
 import { IWorkbenchConfigurationService } from 'vs/workbench/services/configuration/common/configuration';
 import { SettingsTarget } from 'vs/workbench/contrib/preferences/browser/preferencesWidgets';
+import { MarkdownRenderer } from 'vs/editor/browser/core/markdownRenderer';
+import { IExtensionService } from 'vs/workbench/services/extensions/common/extensions';
 
 const $ = DOM.$;
 
@@ -358,27 +359,69 @@ export function resolveConfiguredUntrustedSettings(groups: ISettingsGroup[], tar
 	return [...allSettings].filter(setting => setting.restricted && inspectSetting(setting.key, target, configurationService).isConfigured);
 }
 
-export function resolveExtensionsSettings(groups: ISettingsGroup[]): ITOCEntry<ISetting> {
-	const settingsGroupToEntry = (group: ISettingsGroup) => {
+export async function resolveExtensionsSettings(extensionService: IExtensionService, groups: ISettingsGroup[]): Promise<ITOCEntry<ISetting>> {
+	const extGroupTree = new Map<string, ITOCEntry<ISetting>>();
+	const addEntryToTree = (extensionId: string, extensionName: string, childEntry: ITOCEntry<ISetting>) => {
+		if (!extGroupTree.has(extensionId)) {
+			const rootEntry = {
+				id: extensionId,
+				label: extensionName,
+				children: []
+			};
+			extGroupTree.set(extensionId, rootEntry);
+		}
+		extGroupTree.get(extensionId)!.children!.push(childEntry);
+	};
+	const processGroupEntry = async (group: ISettingsGroup) => {
 		const flatSettings = arrays.flatten(
 			group.sections.map(section => section.settings));
 
-		return {
+		const extensionId = group.extensionInfo!.id;
+		const extension = await extensionService.getExtension(extensionId);
+		const extensionName = extension!.displayName ?? extension!.name;
+
+		const childEntry = {
 			id: group.id,
 			label: group.title,
+			order: group.order,
 			settings: flatSettings
 		};
+		addEntryToTree(extensionId, extensionName, childEntry);
 	};
 
-	const extGroups = groups
+	const processPromises = groups
 		.sort((a, b) => a.title.localeCompare(b.title))
-		.map(g => settingsGroupToEntry(g));
+		.map(g => processGroupEntry(g));
 
-	return {
-		id: 'extensions',
-		label: localize('extensions', "Extensions"),
-		children: extGroups
-	};
+	return Promise.all(processPromises).then(() => {
+		const extGroups: ITOCEntry<ISetting>[] = [];
+		for (const value of extGroupTree.values()) {
+			if (value.children!.length === 1) {
+				// push a flattened setting
+				extGroups.push({
+					id: value.id,
+					label: value.children![0].label,
+					settings: value.children![0].settings
+				});
+			} else {
+				value.children!.sort((a, b) => {
+					if (a.order !== undefined && b.order !== undefined) {
+						return a.order - b.order;
+					} else {
+						// leave things as-is
+						return 0;
+					}
+				});
+				extGroups.push(value);
+			}
+		}
+
+		return {
+			id: 'extensions',
+			label: localize('extensions', "Extensions"),
+			children: extGroups
+		};
+	});
 }
 
 function _resolveSettingsTree(tocData: ITOCEntry<string>, allSettings: Set<ISetting>, logService: ILogService): ITOCEntry<ISetting> {
@@ -629,6 +672,8 @@ export abstract class AbstractSettingRenderer extends Disposable implements ITre
 	protected readonly _onDidChangeSettingHeight = this._register(new Emitter<HeightChangeParams>());
 	readonly onDidChangeSettingHeight: Event<HeightChangeParams> = this._onDidChangeSettingHeight.event;
 
+	private readonly markdownRenderer: MarkdownRenderer;
+
 	constructor(
 		private readonly settingActions: IAction[],
 		private readonly disposableActionFactory: (setting: ISetting) => IAction[],
@@ -642,6 +687,8 @@ export abstract class AbstractSettingRenderer extends Disposable implements ITre
 		@IConfigurationService protected readonly _configService: IConfigurationService,
 	) {
 		super();
+
+		this.markdownRenderer = this._register(_instantiationService.createInstance(MarkdownRenderer, {}));
 
 		this.ignoredSettings = getIgnoredSettings(getDefaultIgnoredSettings(), this._configService);
 		this._register(this._configService.onDidChangeConfiguration(e => {
@@ -772,8 +819,8 @@ export abstract class AbstractSettingRenderer extends Disposable implements ITre
 		template.descriptionElement.innerText = '';
 		if (element.setting.descriptionIsMarkdown) {
 			const disposables = new DisposableStore();
-			template.toDispose.add(disposables);
-			const renderedDescription = this.renderSettingMarkdown(element, element.description, disposables);
+			template.elementDisposables.add(disposables);
+			const renderedDescription = this.renderSettingMarkdown(element, template.containerElement, element.description, disposables);
 			template.descriptionElement.appendChild(renderedDescription);
 		} else {
 			template.descriptionElement.innerText = element.description;
@@ -817,10 +864,11 @@ export abstract class AbstractSettingRenderer extends Disposable implements ITre
 			const disposables = new DisposableStore();
 			template.elementDisposables.add(disposables);
 			template.deprecationWarningElement.innerText = '';
-			template.deprecationWarningElement.appendChild(this.renderSettingMarkdown(element, element.setting.deprecationMessage!, template.elementDisposables));
+			template.deprecationWarningElement.appendChild(this.renderSettingMarkdown(element, template.containerElement, element.setting.deprecationMessage!, template.elementDisposables));
 		} else {
 			template.deprecationWarningElement.innerText = deprecationText;
 		}
+		template.deprecationWarningElement.prepend($('.codicon.codicon-error'));
 		template.containerElement.classList.toggle('is-deprecated', !!deprecationText);
 
 		this.renderValue(element, <ISettingItemTemplate>template, onChange);
@@ -847,11 +895,11 @@ export abstract class AbstractSettingRenderer extends Disposable implements ITre
 		}
 	}
 
-	private renderSettingMarkdown(element: SettingsTreeSettingElement, text: string, disposeables: DisposableStore): HTMLElement {
+	private renderSettingMarkdown(element: SettingsTreeSettingElement, container: HTMLElement, text: string, disposeables: DisposableStore): HTMLElement {
 		// Rewrite `#editor.fontSize#` to link format
 		text = fixSettingLinks(text);
 
-		const renderedMarkdown = renderMarkdown({ value: text, isTrusted: true }, {
+		const renderedMarkdown = this.markdownRenderer.render({ value: text, isTrusted: true }, {
 			actionHandler: {
 				callback: (content: string) => {
 					if (content.startsWith('#')) {
@@ -864,13 +912,20 @@ export abstract class AbstractSettingRenderer extends Disposable implements ITre
 						this._openerService.open(content, { allowCommands: true }).catch(onUnexpectedError);
 					}
 				},
-				disposeables
-			}
+				disposables: disposeables
+			},
+			asyncRenderCallback: () => {
+				const height = container.clientHeight;
+				if (height) {
+					this._onDidChangeSettingHeight.fire({ element, height });
+				}
+			},
 		});
+		disposeables.add(renderedMarkdown);
 
-		renderedMarkdown.classList.add('setting-item-markdown');
-		cleanRenderedMarkdown(renderedMarkdown);
-		return renderedMarkdown;
+		renderedMarkdown.element.classList.add('setting-item-markdown');
+		cleanRenderedMarkdown(renderedMarkdown.element);
+		return renderedMarkdown.element;
 	}
 
 	protected abstract renderValue(dataElement: SettingsTreeSettingElement, template: ISettingItemTemplate, onChange: (value: any) => void): void;
@@ -1342,13 +1397,11 @@ export class SettingExcludeRenderer extends AbstractSettingRenderer implements I
 			const newValue = { ...template.context.scopeValue };
 
 			// first delete the existing entry, if present
-			if (e.originalItem.value.data) {
-				if (e.originalItem.value.data.toString() in template.context.defaultValue) {
-					// delete a default by overriding it
-					newValue[e.originalItem.value.data.toString()] = false;
-				} else {
-					delete newValue[e.originalItem.value.data.toString()];
-				}
+			if (e.originalItem.value.data.toString() in template.context.defaultValue) {
+				// delete a default by overriding it
+				newValue[e.originalItem.value.data.toString()] = false;
+			} else {
+				delete newValue[e.originalItem.value.data.toString()];
 			}
 
 			// then add the new or updated entry, if present
@@ -1441,6 +1494,7 @@ abstract class AbstractSettingTextRenderer extends AbstractSettingRenderer imple
 	protected renderValue(dataElement: SettingsTreeSettingElement, template: ISettingTextItemTemplate, onChange: (value: string) => void): void {
 		template.onChange = undefined;
 		template.inputBox.value = dataElement.value;
+		template.inputBox.setAriaLabel(dataElement.setting.key);
 		template.onChange = value => {
 			if (!renderValidations(dataElement, template, false)) {
 				onChange(value);
@@ -1558,17 +1612,17 @@ export class SettingEnumRenderer extends AbstractSettingRenderer implements ITre
 		const disposables = new DisposableStore();
 		template.toDispose.add(disposables);
 
-		const defaultOrEmptyString = dataElement.defaultValue ?? '';
-
 		let createdDefault = false;
-		if (!settingEnum.includes(defaultOrEmptyString)) {
+		if (!settingEnum.includes(dataElement.defaultValue)) {
 			// Add a new potentially blank default setting
-			settingEnum.unshift(defaultOrEmptyString);
+			settingEnum.unshift(dataElement.defaultValue);
 			enumDescriptions.unshift('');
 			enumItemLabels.unshift('');
 			createdDefault = true;
 		}
 
+		// Use String constructor in case of null or undefined values
+		const stringifiedDefaultValue = escapeInvisibleChars(String(dataElement.defaultValue));
 		const displayOptions = settingEnum
 			.map(String)
 			.map(escapeInvisibleChars)
@@ -1583,17 +1637,18 @@ export class SettingEnumRenderer extends AbstractSettingRenderer implements ITre
 						callback: (content) => {
 							this._openerService.open(content).catch(onUnexpectedError);
 						},
-						disposeables: disposables
+						disposables: disposables
 					},
-					decoratorRight: (data === dataElement.defaultValue || createdDefault && index === 0 ? localize('settings.Default', "default") : '')
+					decoratorRight: (((data === stringifiedDefaultValue) || (createdDefault && index === 0)) ? localize('settings.Default', "default") : '')
 				};
 			});
 
 		template.selectBox.setOptions(displayOptions);
+		template.selectBox.setAriaLabel(dataElement.setting.key);
 
 		let idx = settingEnum.indexOf(dataElement.value);
 		if (idx === -1) {
-			idx = settingEnum.indexOf(defaultOrEmptyString);
+			idx = 0;
 		}
 
 		template.onChange = undefined;
@@ -1658,6 +1713,7 @@ export class SettingNumberRenderer extends AbstractSettingRenderer implements IT
 
 		template.onChange = undefined;
 		template.inputBox.value = dataElement.value;
+		template.inputBox.setAriaLabel(dataElement.setting.key);
 		template.onChange = value => {
 			if (!renderValidations(dataElement, template, false)) {
 				onChange(nullNumParseFn(value));
@@ -1753,6 +1809,7 @@ export class SettingBoolRenderer extends AbstractSettingRenderer implements ITre
 	protected renderValue(dataElement: SettingsTreeSettingElement, template: ISettingBoolItemTemplate, onChange: (value: boolean) => void): void {
 		template.onChange = undefined;
 		template.checkbox.checked = dataElement.value;
+		template.checkbox.setTitle(dataElement.setting.key);
 		template.onChange = onChange;
 	}
 }

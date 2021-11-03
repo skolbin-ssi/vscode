@@ -201,7 +201,7 @@ export class SimpleFileDialog {
 				defaultUri = resources.joinPath(defaultUri, filename);
 			}
 		}
-		if ((this.scheme !== Schemas.file) && !this.fileService.canHandleResource(defaultUri)) {
+		if ((this.scheme !== Schemas.file) && !this.fileService.hasProvider(defaultUri)) {
 			this.notificationService.info(nls.localize('remoteFileDialog.notConnectedToRemote', 'File system provider for {0} is not available.', defaultUri.toString()));
 			return undefined;
 		}
@@ -210,13 +210,13 @@ export class SimpleFileDialog {
 		return newOptions;
 	}
 
-	private remoteUriFrom(path: string): URI {
+	private remoteUriFrom(path: string, hintUri?: URI): URI {
 		if (!path.startsWith('\\\\')) {
 			path = path.replace(/\\/g, '/');
 		}
-		const uri: URI = this.scheme === Schemas.file ? URI.file(path) : URI.from({ scheme: this.scheme, path });
-		// If the default scheme is file, then we don't care about the remote authority
-		const authority = uri.scheme === Schemas.file ? undefined : this.remoteAuthority;
+		const uri: URI = this.scheme === Schemas.file ? URI.file(path) : URI.from({ scheme: this.scheme, path, query: hintUri?.query, fragment: hintUri?.fragment });
+		// If the default scheme is file, then we don't care about the remote authority or the hint authority
+		const authority = (uri.scheme === Schemas.file) ? undefined : (this.remoteAuthority ?? hintUri?.authority);
 		return resources.toLocalResource(uri, authority,
 			// If there is a remote authority, then we should use the system's default URI as the local scheme.
 			// If there is *no* remote authority, then we should use the default scheme for this dialog as that is already local.
@@ -266,7 +266,7 @@ export class SimpleFileDialog {
 			}
 		}
 
-		return new Promise<URI | undefined>(async (resolve) => {
+		return new Promise<URI | undefined>((resolve) => {
 			this.filePickBox = this.quickInputService.createQuickPick<FileQuickPickItem>();
 			this.busy = true;
 			this.filePickBox.matchOnLabel = false;
@@ -395,13 +395,14 @@ export class SimpleFileDialog {
 
 			this.filePickBox.show();
 			this.contextKey.set(true);
-			await this.updateItems(homedir, true, this.trailing);
-			if (this.trailing) {
-				this.filePickBox.valueSelection = [this.filePickBox.value.length - this.trailing.length, this.filePickBox.value.length - ext.length];
-			} else {
-				this.filePickBox.valueSelection = [this.filePickBox.value.length, this.filePickBox.value.length];
-			}
-			this.busy = false;
+			this.updateItems(homedir, true, this.trailing).then(() => {
+				if (this.trailing) {
+					this.filePickBox.valueSelection = [this.filePickBox.value.length - this.trailing.length, this.filePickBox.value.length - ext.length];
+				} else {
+					this.filePickBox.valueSelection = [this.filePickBox.value.length, this.filePickBox.value.length];
+				}
+				this.busy = false;
+			});
 		});
 	}
 
@@ -463,19 +464,19 @@ export class SimpleFileDialog {
 
 	private filePickBoxValue(): URI {
 		// The file pick box can't render everything, so we use the current folder to create the uri so that it is an existing path.
-		const directUri = this.remoteUriFrom(this.filePickBox.value.trimRight());
+		const directUri = this.remoteUriFrom(this.filePickBox.value.trimRight(), this.currentFolder);
 		const currentPath = this.pathFromUri(this.currentFolder);
 		if (equalsIgnoreCase(this.filePickBox.value, currentPath)) {
 			return this.currentFolder;
 		}
-		const currentDisplayUri = this.remoteUriFrom(currentPath);
+		const currentDisplayUri = this.remoteUriFrom(currentPath, this.currentFolder);
 		const relativePath = resources.relativePath(currentDisplayUri, directUri);
 		const isSameRoot = (this.filePickBox.value.length > 1 && currentPath.length > 1) ? equalsIgnoreCase(this.filePickBox.value.substr(0, 2), currentPath.substr(0, 2)) : false;
 		if (relativePath && isSameRoot) {
 			let path = resources.joinPath(this.currentFolder, relativePath);
 			const directBasename = resources.basename(directUri);
 			if ((directBasename === '.') || (directBasename === '..')) {
-				path = this.remoteUriFrom(this.pathAppend(path, directBasename));
+				path = this.remoteUriFrom(this.pathAppend(path, directBasename), this.currentFolder);
 			}
 			return resources.hasTrailingPathSeparator(directUri) ? resources.addTrailingPathSeparator(path) : path;
 		} else {

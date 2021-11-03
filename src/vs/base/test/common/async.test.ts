@@ -5,10 +5,10 @@
 
 import * as assert from 'assert';
 import * as async from 'vs/base/common/async';
-import { isPromiseCanceledError } from 'vs/base/common/errors';
-import { URI } from 'vs/base/common/uri';
 import { CancellationToken, CancellationTokenSource } from 'vs/base/common/cancellation';
+import { isPromiseCanceledError } from 'vs/base/common/errors';
 import { Event } from 'vs/base/common/event';
+import { URI } from 'vs/base/common/uri';
 
 suite('Async', () => {
 
@@ -740,15 +740,24 @@ suite('Async', () => {
 	});
 
 	test('IntervalCounter', async () => {
-		const counter = new async.IntervalCounter(10);
+		let now = Date.now();
+
+		const counter = new async.IntervalCounter(5);
+
+		let ellapsed = Date.now() - now;
+		if (ellapsed > 4) {
+			return; // flaky (https://github.com/microsoft/vscode/issues/114028)
+		}
+
 		assert.strictEqual(counter.increment(), 1);
 		assert.strictEqual(counter.increment(), 2);
 		assert.strictEqual(counter.increment(), 3);
 
-		const now = Date.now();
-		await async.timeout(20);
-		if (Date.now() - now < 11) {
-			return; // Firefox in Playwright seems to have a flaky timeout implementation (https://github.com/microsoft/vscode/issues/114028)
+		now = Date.now();
+		await async.timeout(10);
+		ellapsed = Date.now() - now;
+		if (ellapsed < 5) {
+			return; // flaky (https://github.com/microsoft/vscode/issues/114028)
 		}
 
 		assert.strictEqual(counter.increment(), 1);
@@ -928,6 +937,44 @@ suite('Async', () => {
 			assert.strictEqual(error, p2Error);
 			assert.ok(p2Handled);
 			assert.ok(p3Handled);
+		});
+	});
+
+	suite('Promises.withAsyncBody', () => {
+		test('basics', async () => {
+
+			const p1 = async.Promises.withAsyncBody(async (resolve, reject) => {
+				resolve(1);
+			});
+
+			const p2 = async.Promises.withAsyncBody(async (resolve, reject) => {
+				reject(new Error('error'));
+			});
+
+			const p3 = async.Promises.withAsyncBody(async (resolve, reject) => {
+				throw new Error('error');
+			});
+
+			const r1 = await p1;
+			assert.strictEqual(r1, 1);
+
+			let e2: Error | undefined = undefined;
+			try {
+				await p2;
+			} catch (error) {
+				e2 = error;
+			}
+
+			assert.ok(e2 instanceof Error);
+
+			let e3: Error | undefined = undefined;
+			try {
+				await p3;
+			} catch (error) {
+				e3 = error;
+			}
+
+			assert.ok(e3 instanceof Error);
 		});
 	});
 

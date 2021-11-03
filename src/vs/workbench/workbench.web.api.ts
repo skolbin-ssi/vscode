@@ -7,7 +7,6 @@ import 'vs/workbench/workbench.web.main';
 import { main } from 'vs/workbench/browser/web.main';
 import { UriComponents, URI } from 'vs/base/common/uri';
 import { IWebSocketFactory, IWebSocket } from 'vs/platform/remote/browser/browserSocketFactory';
-import { IExtensionManifest } from 'vs/platform/extensions/common/extensions';
 import { IURLCallbackProvider } from 'vs/workbench/services/url/browser/urlService';
 import { LogLevel } from 'vs/platform/log/common/log';
 import { IUpdateProvider, IUpdate } from 'vs/workbench/services/update/browser/updateService';
@@ -19,16 +18,10 @@ import { IProductConfiguration } from 'vs/base/common/product';
 import { mark } from 'vs/base/common/performance';
 import { ICredentialsProvider } from 'vs/workbench/services/credentials/common/credentials';
 import { TunnelProviderFeatures } from 'vs/platform/remote/common/tunnel';
-import { ITelemetryAppender } from 'vs/platform/telemetry/common/telemetryUtils';
+import { MenuId, MenuRegistry } from 'vs/platform/actions/common/actions';
 
 interface IResourceUriProvider {
 	(uri: URI): URI;
-}
-
-interface IStaticExtension {
-	packageJSON: IExtensionManifest;
-	extensionLocation: UriComponents;
-	isBuiltin?: boolean;
 }
 
 /**
@@ -43,6 +36,21 @@ interface ICommonTelemetryPropertiesResolver {
 
 interface IExternalUriResolver {
 	(uri: URI): Promise<URI>;
+}
+
+/**
+ * External URL opener
+ */
+interface IExternalURLOpener {
+
+	/**
+	 * Overrides the behavior when an external URL is about to be opened.
+	 * Returning false means that the URL wasn't handled, and the default
+	 * handling behavior should be used: `window.open(href, '_blank', 'noopener');`
+	 *
+	 * @returns true if URL was handled, false otherwise.
+	 */
+	openExternal(href: string): boolean | Promise<boolean>;
 }
 
 interface ITunnelProvider {
@@ -78,12 +86,17 @@ interface ITunnelOptions {
 
 	label?: string;
 
+	/**
+	 * @deprecated Use privacy instead
+	 */
 	public?: boolean;
+
+	privacy?: string;
 
 	protocol?: string;
 }
 
-export interface TunnelCreationOptions {
+interface TunnelCreationOptions {
 
 	/**
 	 * True when the local operating system will require elevation to use the requested local port.
@@ -100,7 +113,12 @@ interface ITunnel {
 	 */
 	localAddress: string;
 
+	/**
+	 * @deprecated Use privacy instead
+	 */
 	public?: boolean;
+
+	privacy?: string;
 
 	/**
 	 * If protocol is not provided, it is assumed to be http, regardless of the localAddress
@@ -128,6 +146,12 @@ interface ICommand {
 	id: string,
 
 	/**
+	 * The optional label of the command. If provided, the command will appear
+	 * in the command palette.
+	 */
+	label?: string,
+
+	/**
 	 * A function that is being executed with any arguments passed over. The
 	 * return type will be send back to the caller.
 	 *
@@ -146,7 +170,7 @@ interface IHomeIndicator {
 
 	/**
 	 * The icon name for the home indicator. This needs to be one of the existing
-	 * icons from our Codicon icon set. For example `sync`.
+	 * icons from our Codicon icon set. For example `code`.
 	 */
 	icon: string;
 
@@ -154,6 +178,46 @@ interface IHomeIndicator {
 	 * A tooltip that will appear while hovering over the home indicator.
 	 */
 	title: string;
+}
+
+interface IWelcomeBanner {
+
+	/**
+	 * Welcome banner message to appear as text.
+	 */
+	message: string;
+
+	/**
+	 * Optional icon for the banner. This is either the URL to an icon to use
+	 * or the name of one of the existing icons from our Codicon icon set.
+	 *
+	 * If not provided a default icon will be used.
+	 */
+	icon?: string | UriComponents;
+
+	/**
+	 * Optional actions to appear as links after the welcome banner message.
+	 */
+	actions?: IWelcomeBannerAction[];
+}
+
+interface IWelcomeBannerAction {
+
+	/**
+	 * The link to open when clicking. Supports command invocation when
+	 * using the `command:<commandId>` value.
+	 */
+	href: string;
+
+	/**
+	 * The label to show for the action link.
+	 */
+	label: string;
+
+	/**
+	 * A tooltip that will appear while hovering over the action link.
+	 */
+	title?: string;
 }
 
 interface IWindowIndicator {
@@ -211,10 +275,12 @@ interface IPosition {
 }
 
 interface IRange {
+
 	/**
 	 * The start position. It is before or equal to end position.
 	 */
 	readonly start: IPosition;
+
 	/**
 	 * The end position. It is after or equal to start position.
 	 */
@@ -231,7 +297,11 @@ interface IDefaultEditor {
 interface IDefaultLayout {
 	readonly views?: IDefaultView[];
 	readonly editors?: IDefaultEditor[];
-	/** Forces this layout to be applied even if this isn't the first time the workspace has been opened */
+
+	/**
+	 * Forces this layout to be applied even if this isn't
+	 * the first time the workspace has been opened
+	 */
 	readonly force?: boolean;
 }
 
@@ -296,7 +366,7 @@ interface IWorkbenchConstructionOptions {
 	/**
 	 * [TEMPORARY]: This will be removed soon.
 	 * Use an unique origin for the web worker extension host.
-	 * Defaults to false.
+	 * Defaults to true.
 	 */
 	readonly __uniqueWebWorkerExtensionHostOrigin?: boolean;
 
@@ -314,6 +384,11 @@ interface IWorkbenchConstructionOptions {
 	 * Resolves an external uri before it is opened.
 	 */
 	readonly resolveExternalUri?: IExternalUriResolver;
+
+	/**
+	 * Support for URL callbacks.
+	 */
+	readonly externalURLOpener?: IExternalURLOpener;
 
 	/**
 	 * A provider for supplying tunneling functionality,
@@ -345,12 +420,6 @@ interface IWorkbenchConstructionOptions {
 	 * The credentials provider to store and retrieve secrets.
 	 */
 	readonly credentialsProvider?: ICredentialsProvider;
-
-	/**
-	 * Add static extensions that cannot be uninstalled but only be disabled.
-	 * @deprecated. Use `additionalBuiltinExtensions` instead.
-	 */
-	readonly staticExtensions?: readonly IStaticExtension[];
 
 	/**
 	 * Additional builtin extensions that cannot be uninstalled but only be disabled.
@@ -388,12 +457,6 @@ interface IWorkbenchConstructionOptions {
 	 * Support adding additional properties to telemetry.
 	 */
 	readonly resolveCommonTelemetryProperties?: ICommonTelemetryPropertiesResolver;
-
-	/**
-	 * When provided used as the interface for sending telemetry events rather than the VS Code server.
-	 * If no appender is provided and no server is present, no telemetry is sent.
-	 */
-	readonly telemetryAppender?: ITelemetryAppender;
 
 	/**
 	 * A set of optional commands that should be registered with the commands
@@ -437,6 +500,12 @@ interface IWorkbenchConstructionOptions {
 	 * Optional home indicator to appear above the hamburger menu in the activity bar.
 	 */
 	readonly homeIndicator?: IHomeIndicator;
+
+	/**
+	 * Optional welcome banner to appear above the workbench. Can be dismissed by the
+	 * user.
+	 */
+	readonly welcomeBanner?: IWelcomeBanner;
 
 	/**
 	 * Optional override for the product configuration properties.
@@ -507,6 +576,7 @@ interface IPerformanceMark {
 interface IWorkbench {
 
 	commands: {
+
 		/**
 		 * @see [executeCommand](#commands.executeCommand)
 		 */
@@ -514,12 +584,21 @@ interface IWorkbench {
 	}
 
 	env: {
+
+		/**
+		 * @see [getUriScheme](#env.getUriScheme)
+		 */
 		readonly uriScheme: string;
+
 		/**
 		 * @see [retrievePerformanceMarks](#commands.retrievePerformanceMarks)
 		 */
 		retrievePerformanceMarks(): Promise<[string, readonly IPerformanceMark[]][]>;
-		openUri(uri: URI): Promise<boolean>;
+
+		/**
+		 * @see [openUri](#env.openUri)
+		 */
+		openUri(target: URI): Promise<boolean>;
 	}
 
 	/**
@@ -557,12 +636,19 @@ function create(domElement: HTMLElement, options: IWorkbenchConstructionOptions)
 
 	// Register commands if any
 	if (Array.isArray(options.commands)) {
-		for (const command of options.commands) {
+		for (const c of options.commands) {
+			const command: ICommand = c;
+
 			CommandsRegistry.registerCommand(command.id, (accessor, ...args) => {
 				// we currently only pass on the arguments but not the accessor
 				// to the command to reduce our exposure of internal API.
 				return command.handler(...args);
 			});
+
+			// Commands with labels appear in the command palette
+			if (command.label) {
+				MenuRegistry.appendMenuItem(MenuId.CommandPalette, { command: { id: command.id, title: command.label } });
+			}
 		}
 	}
 
@@ -620,13 +706,23 @@ namespace env {
 		return workbench.env.retrievePerformanceMarks();
 	}
 
+	/**
+	 * @returns the scheme to use for opening the associated desktop
+	 * experience via protocol handler.
+	 */
 	export async function getUriScheme(): Promise<string> {
 		const workbench = await workbenchPromise;
+
 		return workbench.env.uriScheme;
 	}
 
+	/**
+	 * Allows to open a `URI` with the standard opener service of the
+	 * workbench.
+	 */
 	export async function openUri(target: URI): Promise<boolean> {
 		const workbench = await workbenchPromise;
+
 		return workbench.env.openUri(target);
 	}
 }
@@ -660,10 +756,6 @@ export {
 	// Credentials
 	ICredentialsProvider,
 
-	// Static Extensions
-	IStaticExtension,
-	IExtensionManifest,
-
 	// Callbacks
 	IURLCallbackProvider,
 
@@ -680,10 +772,12 @@ export {
 
 	// Telemetry
 	ICommonTelemetryPropertiesResolver,
-	ITelemetryAppender,
 
 	// External Uris
 	IExternalUriResolver,
+
+	// External URL Opener
+	IExternalURLOpener,
 
 	// Tunnel
 	ITunnelProvider,
@@ -700,6 +794,8 @@ export {
 
 	// Branding
 	IHomeIndicator,
+	IWelcomeBanner,
+	IWelcomeBannerAction,
 	IProductConfiguration,
 	IWindowIndicator,
 	IInitialColorTheme,

@@ -133,6 +133,11 @@ export class ConfigurationManager implements IConfigurationManager {
 			}
 		}));
 
+		// The resolver can change the type, ensure activation happens, #135090
+		if (result?.type && result.type !== config.type) {
+			await this.activateDebuggers('onDebugResolve', result.type);
+		}
+
 		return result;
 	}
 
@@ -371,7 +376,11 @@ export class ConfigurationManager implements IConfigurationManager {
 		}
 
 		const names = launch ? launch.getConfigurationNames() : [];
-		this.getSelectedConfig = () => Promise.resolve(config);
+		this.getSelectedConfig = () => {
+			const selected = this.selectedName ? launch?.getConfiguration(this.selectedName) : undefined;
+			return Promise.resolve(selected || config);
+		};
+
 		let type = config?.type;
 		if (name && names.indexOf(name) >= 0) {
 			this.setSelectedLaunchName(name);
@@ -575,10 +584,6 @@ class Launch extends AbstractLaunch implements ILaunch {
 			}
 		}
 
-		if (content === '') {
-			return { editor: null, created: false };
-		}
-
 		const index = content.indexOf(`"${this.configurationManager.selectedConfiguration.name}"`);
 		let startLineNumber = 1;
 		for (let i = 0; i < index; i++) {
@@ -697,7 +702,7 @@ class UserLaunch extends AbstractLaunch implements ILaunch {
 	}
 
 	async openConfigFile(preserveFocus: boolean): Promise<{ editor: IEditorPane | null, created: boolean }> {
-		const editor = await this.preferencesService.openGlobalSettings(true, { preserveFocus, revealSetting: { key: 'launch' } });
+		const editor = await this.preferencesService.openUserSettings({ jsonEditor: true, preserveFocus, revealSetting: { key: 'launch' } });
 		return ({
 			editor: withUndefinedAsNull(editor),
 			created: false

@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as assert from 'assert';
+import { DisposableStore } from 'vs/base/common/lifecycle';
 import { TestCommandService } from 'vs/editor/test/browser/editorTestServices';
 import { ICommandService } from 'vs/platform/commands/common/commands';
 import { EditorResolution } from 'vs/platform/editor/common/editor';
@@ -19,15 +20,17 @@ import { ITestInstantiationService, TestEditorService, workbenchInstantiationSer
 
 suite('PreferencesService', () => {
 
+	let disposables: DisposableStore;
 	let testInstantiationService: ITestInstantiationService;
 	let testObject: PreferencesService;
 	let editorService: TestEditorService2;
 
 	setup(() => {
+		disposables = new DisposableStore();
 		editorService = new TestEditorService2();
 		testInstantiationService = workbenchInstantiationService({
 			editorService: () => editorService
-		});
+		}, disposables);
 
 		testInstantiationService.stub(IJSONEditingService, TestJSONEditingService);
 		testInstantiationService.stub(IRemoteAgentService, TestRemoteAgentService);
@@ -40,8 +43,12 @@ suite('PreferencesService', () => {
 		testObject = instantiationService.createInstance(PreferencesService);
 	});
 
+	teardown(() => {
+		disposables.dispose();
+	});
+
 	test('options are preserved when calling openEditor', async () => {
-		testObject.openSettings(false, 'test query');
+		testObject.openSettings({ jsonEditor: false, query: 'test query' });
 		const options = editorService.lastOpenEditorOptions as ISettingsEditorOptions;
 		assert.strictEqual(options.focusSearch, true);
 		assert.strictEqual(options.override, EditorResolution.DISABLED);

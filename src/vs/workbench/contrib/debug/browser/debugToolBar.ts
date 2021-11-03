@@ -26,7 +26,7 @@ import { RunOnceScheduler } from 'vs/base/common/async';
 import { IInstantiationService } from 'vs/platform/instantiation/common/instantiation';
 import { createActionViewItem, createAndFillInActionBarActions } from 'vs/platform/actions/browser/menuEntryActionViewItem';
 import { ICommandAction, IMenu, IMenuService, MenuId, MenuRegistry } from 'vs/platform/actions/common/actions';
-import { IContextKeyService, ContextKeyExpression, ContextKeyExpr, ContextKeyEqualsExpr } from 'vs/platform/contextkey/common/contextkey';
+import { IContextKeyService, ContextKeyExpression, ContextKeyExpr } from 'vs/platform/contextkey/common/contextkey';
 import { IDisposable, dispose } from 'vs/base/common/lifecycle';
 import * as icons from 'vs/workbench/contrib/debug/browser/debugIcons';
 import { debugToolBarBackground, debugToolBarBorder } from 'vs/workbench/contrib/debug/browser/debugColors';
@@ -257,6 +257,7 @@ export class DebugToolBar extends Themable implements IWorkbenchContribution {
 
 // Debug toolbar
 
+let debugViewTitleItems: IDisposable[] = [];
 const registerDebugToolBarItem = (id: string, title: string, order: number, icon?: { light?: URI, dark?: URI } | ThemeIcon, when?: ContextKeyExpression, precondition?: ContextKeyExpression, alt?: ICommandAction) => {
 	MenuRegistry.appendMenuItem(MenuId.DebugToolBar, {
 		group: 'navigation',
@@ -272,9 +273,9 @@ const registerDebugToolBarItem = (id: string, title: string, order: number, icon
 	});
 
 	// Register actions in debug viewlet when toolbar is docked
-	MenuRegistry.appendMenuItem(MenuId.ViewContainerTitle, {
+	debugViewTitleItems.push(MenuRegistry.appendMenuItem(MenuId.ViewContainerTitle, {
 		group: 'navigation',
-		when: ContextKeyExpr.and(when, ContextKeyEqualsExpr.create('viewContainer', VIEWLET_ID), CONTEXT_DEBUG_STATE.notEqualsTo('inactive'), ContextKeyExpr.equals('config.debug.toolBarLocation', 'docked')),
+		when: ContextKeyExpr.and(when, ContextKeyExpr.equals('viewContainer', VIEWLET_ID), CONTEXT_DEBUG_STATE.notEqualsTo('inactive'), ContextKeyExpr.equals('config.debug.toolBarLocation', 'docked')),
 		order,
 		command: {
 			id,
@@ -282,8 +283,22 @@ const registerDebugToolBarItem = (id: string, title: string, order: number, icon
 			icon,
 			precondition
 		}
-	});
+	}));
 };
+
+MenuRegistry.onDidChangeMenu(e => {
+	// In case the debug toolbar is docked we need to make sure that the docked toolbar has the up to date commands registered #115945
+	if (e.has(MenuId.DebugToolBar)) {
+		dispose(debugViewTitleItems);
+		const items = MenuRegistry.getMenuItems(MenuId.DebugToolBar);
+		for (const i of items) {
+			debugViewTitleItems.push(MenuRegistry.appendMenuItem(MenuId.ViewContainerTitle, {
+				...i,
+				when: ContextKeyExpr.and(i.when, ContextKeyExpr.equals('viewContainer', VIEWLET_ID), CONTEXT_DEBUG_STATE.notEqualsTo('inactive'), ContextKeyExpr.equals('config.debug.toolBarLocation', 'docked'))
+			}));
+		}
+	}
+});
 
 registerDebugToolBarItem(CONTINUE_ID, CONTINUE_LABEL, 10, icons.debugContinue, CONTEXT_DEBUG_STATE.isEqualTo('stopped'));
 registerDebugToolBarItem(PAUSE_ID, PAUSE_LABEL, 10, icons.debugPause, CONTEXT_DEBUG_STATE.notEqualsTo('stopped'), CONTEXT_DEBUG_STATE.isEqualTo('running'));

@@ -3,32 +3,32 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import 'vs/css!./list';
-import { IDisposable, dispose, DisposableStore } from 'vs/base/common/lifecycle';
-import { isNumber } from 'vs/base/common/types';
-import { range, binarySearch, firstOrDefault } from 'vs/base/common/arrays';
-import { memoize } from 'vs/base/common/decorators';
-import * as platform from 'vs/base/common/platform';
-import { Gesture } from 'vs/base/browser/touch';
-import { KeyCode } from 'vs/base/common/keyCodes';
-import { StandardKeyboardEvent, IKeyboardEvent } from 'vs/base/browser/keyboardEvent';
-import { Event, Emitter, EventBufferer } from 'vs/base/common/event';
+import { IDragAndDropData } from 'vs/base/browser/dnd';
+import { createStyleSheet } from 'vs/base/browser/dom';
 import { DomEmitter, stopEvent } from 'vs/base/browser/event';
-import { IListVirtualDelegate, IListRenderer, IListEvent, IListContextMenuEvent, IListMouseEvent, IListTouchEvent, IListGestureEvent, IIdentityProvider, IKeyboardNavigationLabelProvider, IListDragAndDrop, IListDragOverReaction, ListError, IKeyboardNavigationDelegate } from './list';
-import { ListView, IListViewOptions, IListViewDragAndDrop, IListViewAccessibilityProvider, IListViewOptionsUpdate } from './listView';
+import { IKeyboardEvent, StandardKeyboardEvent } from 'vs/base/browser/keyboardEvent';
+import { Gesture } from 'vs/base/browser/touch';
+import { alert } from 'vs/base/browser/ui/aria/aria';
+import { CombinedSpliceable } from 'vs/base/browser/ui/list/splice';
+import { ScrollableElementChangeOptions } from 'vs/base/browser/ui/scrollbar/scrollableElementOptions';
+import { binarySearch, firstOrDefault, range } from 'vs/base/common/arrays';
+import { timeout } from 'vs/base/common/async';
 import { Color } from 'vs/base/common/color';
+import { memoize } from 'vs/base/common/decorators';
+import { Emitter, Event, EventBufferer } from 'vs/base/common/event';
+import { matchesPrefix } from 'vs/base/common/filters';
+import { KeyCode } from 'vs/base/common/keyCodes';
+import { DisposableStore, dispose, IDisposable } from 'vs/base/common/lifecycle';
+import { clamp } from 'vs/base/common/numbers';
 import { mixin } from 'vs/base/common/objects';
+import * as platform from 'vs/base/common/platform';
 import { ScrollbarVisibility, ScrollEvent } from 'vs/base/common/scrollable';
 import { ISpliceable } from 'vs/base/common/sequence';
-import { CombinedSpliceable } from 'vs/base/browser/ui/list/splice';
-import { clamp } from 'vs/base/common/numbers';
-import { matchesPrefix } from 'vs/base/common/filters';
-import { IDragAndDropData } from 'vs/base/browser/dnd';
-import { alert } from 'vs/base/browser/ui/aria/aria';
 import { IThemable } from 'vs/base/common/styler';
-import { createStyleSheet } from 'vs/base/browser/dom';
-import { ScrollableElementChangeOptions } from 'vs/base/browser/ui/scrollbar/scrollableElementOptions';
-import { timeout } from 'vs/base/common/async';
+import { isNumber } from 'vs/base/common/types';
+import 'vs/css!./list';
+import { IIdentityProvider, IKeyboardNavigationDelegate, IKeyboardNavigationLabelProvider, IListContextMenuEvent, IListDragAndDrop, IListDragOverReaction, IListEvent, IListGestureEvent, IListMouseEvent, IListRenderer, IListTouchEvent, IListVirtualDelegate, ListError } from './list';
+import { IListViewAccessibilityProvider, IListViewDragAndDrop, IListViewOptions, IListViewOptionsUpdate, ListView } from './listView';
 
 interface ITraitChangeEvent {
 	indexes: number[];
@@ -283,7 +283,7 @@ class KeyboardController<T> implements IDisposable {
 		this.onKeyDown.filter(e => e.keyCode === KeyCode.Escape).on(this.onEscape, this, this.disposables);
 
 		if (options.multipleSelectionSupport !== false) {
-			this.onKeyDown.filter(e => (platform.isMacintosh ? e.metaKey : e.ctrlKey) && e.keyCode === KeyCode.KEY_A).on(this.onCtrlA, this, this.multipleSelectionDisposables);
+			this.onKeyDown.filter(e => (platform.isMacintosh ? e.metaKey : e.ctrlKey) && e.keyCode === KeyCode.KeyA).on(this.onCtrlA, this, this.multipleSelectionDisposables);
 		}
 	}
 
@@ -292,7 +292,7 @@ class KeyboardController<T> implements IDisposable {
 			this.multipleSelectionDisposables.clear();
 
 			if (optionsUpdate.multipleSelectionSupport) {
-				this.onKeyDown.filter(e => (platform.isMacintosh ? e.metaKey : e.ctrlKey) && e.keyCode === KeyCode.KEY_A).on(this.onCtrlA, this, this.multipleSelectionDisposables);
+				this.onKeyDown.filter(e => (platform.isMacintosh ? e.metaKey : e.ctrlKey) && e.keyCode === KeyCode.KeyA).on(this.onCtrlA, this, this.multipleSelectionDisposables);
 			}
 		}
 	}
@@ -307,7 +307,9 @@ class KeyboardController<T> implements IDisposable {
 		e.preventDefault();
 		e.stopPropagation();
 		this.list.focusPrevious(1, false, e.browserEvent);
-		this.list.reveal(this.list.getFocus()[0]);
+		const el = this.list.getFocus()[0];
+		this.list.setAnchor(el);
+		this.list.reveal(el);
 		this.view.domNode.focus();
 	}
 
@@ -315,7 +317,9 @@ class KeyboardController<T> implements IDisposable {
 		e.preventDefault();
 		e.stopPropagation();
 		this.list.focusNext(1, false, e.browserEvent);
-		this.list.reveal(this.list.getFocus()[0]);
+		const el = this.list.getFocus()[0];
+		this.list.setAnchor(el);
+		this.list.reveal(el);
 		this.view.domNode.focus();
 	}
 
@@ -323,7 +327,9 @@ class KeyboardController<T> implements IDisposable {
 		e.preventDefault();
 		e.stopPropagation();
 		this.list.focusPreviousPage(e.browserEvent);
-		this.list.reveal(this.list.getFocus()[0]);
+		const el = this.list.getFocus()[0];
+		this.list.setAnchor(el);
+		this.list.reveal(el);
 		this.view.domNode.focus();
 	}
 
@@ -331,7 +337,9 @@ class KeyboardController<T> implements IDisposable {
 		e.preventDefault();
 		e.stopPropagation();
 		this.list.focusNextPage(e.browserEvent);
-		this.list.reveal(this.list.getFocus()[0]);
+		const el = this.list.getFocus()[0];
+		this.list.setAnchor(el);
+		this.list.reveal(el);
 		this.view.domNode.focus();
 	}
 
@@ -339,6 +347,7 @@ class KeyboardController<T> implements IDisposable {
 		e.preventDefault();
 		e.stopPropagation();
 		this.list.setSelection(range(this.list.length), e.browserEvent);
+		this.list.setAnchor(undefined);
 		this.view.domNode.focus();
 	}
 
@@ -347,6 +356,7 @@ class KeyboardController<T> implements IDisposable {
 			e.preventDefault();
 			e.stopPropagation();
 			this.list.setSelection([], e.browserEvent);
+			this.list.setAnchor(undefined);
 			this.view.domNode.focus();
 		}
 	}
@@ -368,10 +378,10 @@ export const DefaultKeyboardNavigationDelegate = new class implements IKeyboardN
 			return false;
 		}
 
-		return (event.keyCode >= KeyCode.KEY_A && event.keyCode <= KeyCode.KEY_Z)
-			|| (event.keyCode >= KeyCode.KEY_0 && event.keyCode <= KeyCode.KEY_9)
-			|| (event.keyCode >= KeyCode.NUMPAD_0 && event.keyCode <= KeyCode.NUMPAD_9)
-			|| (event.keyCode >= KeyCode.US_SEMICOLON && event.keyCode <= KeyCode.US_QUOTE);
+		return (event.keyCode >= KeyCode.KeyA && event.keyCode <= KeyCode.KeyZ)
+			|| (event.keyCode >= KeyCode.Digit0 && event.keyCode <= KeyCode.Digit9)
+			|| (event.keyCode >= KeyCode.Numpad0 && event.keyCode <= KeyCode.Numpad9)
+			|| (event.keyCode >= KeyCode.Semicolon && event.keyCode <= KeyCode.Quote);
 	}
 };
 
@@ -424,7 +434,7 @@ class TypeLabelController<T> implements IDisposable {
 			.filter(() => this.automaticKeyboardNavigation || this.triggered)
 			.map(event => new StandardKeyboardEvent(event))
 			.filter(e => this.delegate.mightProducePrintableCharacter(e))
-			.forEach(e => { e.stopPropagation(); e.preventDefault(); })
+			.forEach(e => e.preventDefault())
 			.map(event => event.browserEvent.key)
 			.event;
 
@@ -451,7 +461,7 @@ class TypeLabelController<T> implements IDisposable {
 	private onClear(): void {
 		const focus = this.list.getFocus();
 		if (focus.length > 0 && focus[0] === this.previouslyFocused) {
-			// List: re-anounce element on typing end since typed keys will interupt aria label of focused element
+			// List: re-announce element on typing end since typed keys will interrupt aria label of focused element
 			// Do not announce if there was a focus change at the end to prevent duplication https://github.com/microsoft/vscode/issues/95961
 			const ariaLabel = this.list.options.accessibilityProvider?.getAriaLabel(this.list.element(focus[0]));
 			if (ariaLabel) {

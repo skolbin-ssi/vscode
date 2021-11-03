@@ -3,10 +3,10 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { createDecorator, refineServiceDecorator } from 'vs/platform/instantiation/common/instantiation';
 import { URI } from 'vs/base/common/uri';
 import { NativeParsedArgs } from 'vs/platform/environment/common/argv';
 import { ExtensionKind } from 'vs/platform/extensions/common/extensions';
+import { createDecorator, refineServiceDecorator } from 'vs/platform/instantiation/common/instantiation';
 
 export const IEnvironmentService = createDecorator<IEnvironmentService>('environmentService');
 export const INativeEnvironmentService = refineServiceDecorator<IEnvironmentService, INativeEnvironmentService>(IEnvironmentService);
@@ -18,6 +18,7 @@ export interface IDebugParams {
 
 export interface IExtensionHostDebugParams extends IDebugParams {
 	debugId?: string;
+	env?: Record<string, string>;
 }
 
 /**

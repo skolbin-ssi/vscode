@@ -3,20 +3,20 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import 'vs/css!./paneview';
-import { IDisposable, Disposable, DisposableStore } from 'vs/base/common/lifecycle';
-import { Event, Emitter } from 'vs/base/common/event';
-import { StandardKeyboardEvent } from 'vs/base/browser/keyboardEvent';
-import { KeyCode } from 'vs/base/common/keyCodes';
-import { $, append, trackFocus, EventHelper, clearNode, addDisposableListener } from 'vs/base/browser/dom';
-import { Color, RGBA } from 'vs/base/common/color';
-import { SplitView, IView } from './splitview';
 import { isFirefox } from 'vs/base/browser/browser';
 import { DataTransfers } from 'vs/base/browser/dnd';
-import { Orientation } from 'vs/base/browser/ui/sash/sash';
-import { localize } from 'vs/nls';
-import { ScrollEvent } from 'vs/base/common/scrollable';
+import { $, addDisposableListener, append, clearNode, EventHelper, trackFocus } from 'vs/base/browser/dom';
 import { DomEmitter } from 'vs/base/browser/event';
+import { StandardKeyboardEvent } from 'vs/base/browser/keyboardEvent';
+import { Orientation } from 'vs/base/browser/ui/sash/sash';
+import { Color, RGBA } from 'vs/base/common/color';
+import { Emitter, Event } from 'vs/base/common/event';
+import { KeyCode } from 'vs/base/common/keyCodes';
+import { Disposable, DisposableStore, IDisposable } from 'vs/base/common/lifecycle';
+import { ScrollEvent } from 'vs/base/common/scrollable';
+import 'vs/css!./paneview';
+import { localize } from 'vs/nls';
+import { IView, SplitView } from './splitview';
 
 export interface IPaneOptions {
 	minimumBodySize?: number;
@@ -38,11 +38,11 @@ export interface IPaneStyles {
 /**
  * A Pane is a structured SplitView view.
  *
- * WARNING: You must call `render()` after you contruct it.
+ * WARNING: You must call `render()` after you construct it.
  * It can't be done automatically at the end of the ctor
  * because of the order of property initialization in TypeScript.
  * Subclasses wouldn't be able to set own properties
- * before the `render()` call, thus forbiding their use.
+ * before the `render()` call, thus forbidding their use.
  */
 export abstract class Pane extends Disposable implements IView {
 
@@ -444,6 +444,7 @@ export class PaneView extends Disposable {
 
 	orientation: Orientation;
 	readonly onDidSashChange: Event<number>;
+	readonly onDidSashReset: Event<number>;
 	readonly onDidScroll: Event<ScrollEvent>;
 
 	constructor(container: HTMLElement, options: IPaneViewOptions = {}) {
@@ -453,6 +454,7 @@ export class PaneView extends Disposable {
 		this.orientation = options.orientation ?? Orientation.VERTICAL;
 		this.element = append(container, $('.monaco-pane-view'));
 		this.splitview = this._register(new SplitView(this.element, { orientation: this.orientation }));
+		this.onDidSashReset = this.splitview.onDidSashReset;
 		this.onDidSashChange = this.splitview.onDidSashChange;
 		this.onDidScroll = this.splitview.onDidScroll;
 	}

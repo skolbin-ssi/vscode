@@ -9,7 +9,7 @@ import { Range } from 'vs/editor/common/core/range';
 import { EditorContextKeys } from 'vs/editor/common/editorContextKeys';
 import { registerEditorAction, EditorAction, IActionOptions, EditorAction2 } from 'vs/editor/browser/editorExtensions';
 import { ContextKeyExpr } from 'vs/platform/contextkey/common/contextkey';
-import { IDebugService, CONTEXT_IN_DEBUG_MODE, CONTEXT_DEBUG_STATE, State, IDebugEditorContribution, EDITOR_CONTRIBUTION_ID, BreakpointWidgetContext, IBreakpoint, BREAKPOINT_EDITOR_CONTRIBUTION_ID, IBreakpointEditorContribution, REPL_VIEW_ID, CONTEXT_STEP_INTO_TARGETS_SUPPORTED, WATCH_VIEW_ID, CONTEXT_DEBUGGERS_AVAILABLE, CONTEXT_EXCEPTION_WIDGET_VISIBLE, CONTEXT_DISASSEMBLE_REQUEST_SUPPORTED, CONTEXT_LANGUAGE_SUPPORTS_DISASSEMBLE_REQUEST, CONTEXT_FOCUSED_STACK_FRAME_HAS_INSTRUCTION_POINTER_REFERENCE, CONTEXT_CALLSTACK_ITEM_TYPE } from 'vs/workbench/contrib/debug/common/debug';
+import { IDebugService, CONTEXT_IN_DEBUG_MODE, CONTEXT_DEBUG_STATE, IDebugEditorContribution, EDITOR_CONTRIBUTION_ID, BreakpointWidgetContext, BREAKPOINT_EDITOR_CONTRIBUTION_ID, IBreakpointEditorContribution, REPL_VIEW_ID, CONTEXT_STEP_INTO_TARGETS_SUPPORTED, WATCH_VIEW_ID, CONTEXT_DEBUGGERS_AVAILABLE, CONTEXT_EXCEPTION_WIDGET_VISIBLE, CONTEXT_DISASSEMBLE_REQUEST_SUPPORTED, CONTEXT_LANGUAGE_SUPPORTS_DISASSEMBLE_REQUEST, CONTEXT_FOCUSED_STACK_FRAME_HAS_INSTRUCTION_POINTER_REFERENCE, CONTEXT_CALLSTACK_ITEM_TYPE, IDebugConfiguration } from 'vs/workbench/contrib/debug/common/debug';
 import { ICodeEditor } from 'vs/editor/browser/editorBrowser';
 import { IEditorService } from 'vs/workbench/services/editor/common/editorService';
 import { openBreakpointSource } from 'vs/workbench/contrib/debug/browser/breakpointsView';
@@ -20,13 +20,10 @@ import { IContextMenuService } from 'vs/platform/contextview/browser/contextView
 import { Action } from 'vs/base/common/actions';
 import { getDomNodePagePosition } from 'vs/base/browser/dom';
 import { IUriIdentityService } from 'vs/workbench/services/uriIdentity/common/uriIdentity';
-import { Position } from 'vs/editor/common/core/position';
-import { URI } from 'vs/base/common/uri';
-import { IDisposable } from 'vs/base/common/lifecycle';
-import { raceTimeout } from 'vs/base/common/async';
-import { registerAction2, MenuId } from 'vs/platform/actions/common/actions';
+import { registerAction2, MenuId, Action2 } from 'vs/platform/actions/common/actions';
 import { ServicesAccessor } from 'vs/platform/instantiation/common/instantiation';
 import { DisassemblyViewInput } from 'vs/workbench/contrib/debug/common/disassemblyViewInput';
+import { IConfigurationService } from 'vs/platform/configuration/common/configuration';
 
 class ToggleBreakpointAction extends EditorAction2 {
 	constructor() {
@@ -177,6 +174,32 @@ class OpenDisassemblyViewAction extends EditorAction2 {
 	}
 }
 
+class ToggleDisassemblyViewSourceCodeAction extends Action2 {
+
+	public static readonly ID = 'debug.action.toggleDisassemblyViewSourceCode';
+	public static readonly configID: string = 'debug.disassemblyView.showSourceCode';
+
+	constructor() {
+		super({
+			id: ToggleDisassemblyViewSourceCodeAction.ID,
+			title: {
+				value: nls.localize('toggleDisassemblyViewSourceCode', "Toggle Source Code in Disassembly View"),
+				original: 'Toggle Source Code in Disassembly View',
+				mnemonicTitle: nls.localize({ key: 'mitogglesource', comment: ['&& denotes a mnemonic'] }, "&&ToggleSource")
+			},
+			f1: true,
+		});
+	}
+
+	run(accessor: ServicesAccessor, editor: ICodeEditor, ...args: any[]): void {
+		const configService = accessor.get(IConfigurationService);
+		if (configService) {
+			const value = configService.getValue<IDebugConfiguration>('debug').disassemblyView.showSourceCode;
+			configService.updateValue(ToggleDisassemblyViewSourceCodeAction.configID, !value);
+		}
+	}
+}
+
 export class RunToCursorAction extends EditorAction {
 
 	public static readonly ID = 'editor.debug.action.runToCursor';
@@ -196,131 +219,25 @@ export class RunToCursorAction extends EditorAction {
 	}
 
 	async run(accessor: ServicesAccessor, editor: ICodeEditor): Promise<void> {
-		const debugService = accessor.get(IDebugService);
-		const focusedSession = debugService.getViewModel().focusedSession;
-		if (debugService.state !== State.Stopped || !focusedSession) {
-			return;
-		}
-
 		const position = editor.getPosition();
 		if (!(editor.hasModel() && position)) {
 			return;
 		}
-
 		const uri = editor.getModel().uri;
-		const bpExists = !!(debugService.getModel().getBreakpoints({ column: position.column, lineNumber: position.lineNumber, uri }).length);
 
-		let breakpointToRemove: IBreakpoint | undefined;
-		let threadToContinue = debugService.getViewModel().focusedThread;
-		if (!bpExists) {
-			const addResult = await this.addBreakpoints(accessor, uri, position);
-			if (addResult.thread) {
-				threadToContinue = addResult.thread;
-			}
-
-			if (addResult.breakpoint) {
-				breakpointToRemove = addResult.breakpoint;
-			}
-		}
-
-		if (!threadToContinue) {
-			return;
-		}
-
-		const oneTimeListener = threadToContinue.session.onDidChangeState(() => {
-			const state = focusedSession.state;
-			if (state === State.Stopped || state === State.Inactive) {
-				if (breakpointToRemove) {
-					debugService.removeBreakpoints(breakpointToRemove.getId());
-				}
-				oneTimeListener.dispose();
-			}
-		});
-
-		await threadToContinue.continue();
-	}
-
-	private async addBreakpoints(accessor: ServicesAccessor, uri: URI, position: Position) {
 		const debugService = accessor.get(IDebugService);
-		const debugModel = debugService.getModel();
 		const viewModel = debugService.getViewModel();
 		const uriIdentityService = accessor.get(IUriIdentityService);
 
-		let column = 0;
+		let column: number | undefined = undefined;
 		const focusedStackFrame = viewModel.focusedStackFrame;
 		if (focusedStackFrame && uriIdentityService.extUri.isEqual(focusedStackFrame.source.uri, uri) && focusedStackFrame.range.startLineNumber === position.lineNumber) {
-			// If the cursor is on a line different than the one the debugger is currently paused on, then send the breakpoint at column 0 on the line
+			// If the cursor is on a line different than the one the debugger is currently paused on, then send the breakpoint on the line without a column
 			// otherwise set it at the precise column #102199
 			column = position.column;
 		}
 
-		const breakpoints = await debugService.addBreakpoints(uri, [{ lineNumber: position.lineNumber, column }], false);
-		const breakpoint = breakpoints?.[0];
-		if (!breakpoint) {
-			return { breakpoint: undefined, thread: viewModel.focusedThread };
-		}
-
-		// If the breakpoint was not initially verified, wait up to 2s for it to become so.
-		// Inherently racey if multiple sessions can verify async, but not solvable...
-		if (!breakpoint.verified) {
-			let listener: IDisposable;
-			await raceTimeout(new Promise<void>(resolve => {
-				listener = debugModel.onDidChangeBreakpoints(() => {
-					if (breakpoint.verified) {
-						resolve();
-					}
-				});
-			}), 2000);
-			listener!.dispose();
-		}
-
-		// Look at paused threads for sessions that verified this bp. Prefer, in order:
-		const enum Score {
-			/** The focused thread */
-			Focused,
-			/** Any other stopped thread of a session that verified the bp */
-			Verified,
-			/** Any thread that verified and paused in the same file */
-			VerifiedAndPausedInFile,
-			/** The focused thread if it verified the breakpoint */
-			VerifiedAndFocused,
-		}
-
-		let bestThread = viewModel.focusedThread;
-		let bestScore = Score.Focused;
-		for (const sessionId of breakpoint.sessionsThatVerified) {
-			const session = debugModel.getSession(sessionId);
-			if (!session) {
-				continue;
-			}
-
-			const threads = session.getAllThreads().filter(t => t.stopped);
-			if (bestScore < Score.VerifiedAndFocused) {
-				if (viewModel.focusedThread && threads.includes(viewModel.focusedThread)) {
-					bestThread = viewModel.focusedThread;
-					bestScore = Score.VerifiedAndFocused;
-				}
-			}
-
-			if (bestScore < Score.VerifiedAndPausedInFile) {
-				const pausedInThisFile = threads.find(t => {
-					const top = t.getTopStackFrame();
-					return top && uriIdentityService.extUri.isEqual(top.source.uri, uri);
-				});
-
-				if (pausedInThisFile) {
-					bestThread = pausedInThisFile;
-					bestScore = Score.VerifiedAndPausedInFile;
-				}
-			}
-
-			if (bestScore < Score.Verified) {
-				bestThread = threads[0];
-				bestScore = Score.VerifiedAndPausedInFile;
-			}
-		}
-
-		return { thread: bestThread, breakpoint };
+		await debugService.runTo(uri, position.lineNumber, column);
 	}
 }
 
@@ -392,7 +309,7 @@ class ShowDebugHoverAction extends EditorAction {
 			precondition: CONTEXT_IN_DEBUG_MODE,
 			kbOpts: {
 				kbExpr: EditorContextKeys.editorTextFocus,
-				primary: KeyChord(KeyMod.CtrlCmd | KeyCode.KEY_K, KeyMod.CtrlCmd | KeyCode.KEY_I),
+				primary: KeyChord(KeyMod.CtrlCmd | KeyCode.KeyK, KeyMod.CtrlCmd | KeyCode.KeyI),
 				weight: KeybindingWeight.EditorContrib
 			}
 		});
@@ -506,8 +423,8 @@ class GoToNextBreakpointAction extends GoToBreakpointAction {
 	constructor() {
 		super(true, {
 			id: 'editor.debug.action.goToNextBreakpoint',
-			label: nls.localize('goToNextBreakpoint', "Debug: Go To Next Breakpoint"),
-			alias: 'Debug: Go To Next Breakpoint',
+			label: nls.localize('goToNextBreakpoint', "Debug: Go to Next Breakpoint"),
+			alias: 'Debug: Go to Next Breakpoint',
 			precondition: CONTEXT_DEBUGGERS_AVAILABLE
 		});
 	}
@@ -517,8 +434,8 @@ class GoToPreviousBreakpointAction extends GoToBreakpointAction {
 	constructor() {
 		super(false, {
 			id: 'editor.debug.action.goToPreviousBreakpoint',
-			label: nls.localize('goToPreviousBreakpoint', "Debug: Go To Previous Breakpoint"),
-			alias: 'Debug: Go To Previous Breakpoint',
+			label: nls.localize('goToPreviousBreakpoint', "Debug: Go to Previous Breakpoint"),
+			alias: 'Debug: Go to Previous Breakpoint',
 			precondition: CONTEXT_DEBUGGERS_AVAILABLE
 		});
 	}
@@ -549,6 +466,7 @@ registerAction2(ToggleBreakpointAction);
 registerAction2(ConditionalBreakpointAction);
 registerAction2(LogPointAction);
 registerAction2(OpenDisassemblyViewAction);
+registerAction2(ToggleDisassemblyViewSourceCodeAction);
 registerEditorAction(RunToCursorAction);
 registerEditorAction(StepIntoTargetsAction);
 registerEditorAction(SelectionToReplAction);

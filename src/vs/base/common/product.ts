@@ -42,6 +42,7 @@ export interface IProductConfiguration {
 	readonly win32AppUserModelId?: string;
 	readonly win32MutexName?: string;
 	readonly applicationName: string;
+	readonly embedderIdentifier?: string;
 
 	readonly urlProtocol: string;
 	readonly dataFolderName: string; // location for extensions (e.g. ~/.vscode-insiders)
@@ -52,6 +53,7 @@ export interface IProductConfiguration {
 	readonly updateUrl?: string;
 	readonly webEndpointUrl?: string;
 	readonly webEndpointUrlTemplate?: string;
+	readonly webviewContentExternalBaseUrlTemplate?: string;
 	readonly target?: string;
 
 	readonly settingsSearchBuildId?: number;
@@ -81,6 +83,7 @@ export interface IProductConfiguration {
 	readonly remoteExtensionTips?: { [remoteName: string]: IRemoteExtensionTip; };
 	readonly extensionKeywords?: { [extension: string]: readonly string[]; };
 	readonly keymapExtensionTips?: readonly string[];
+	readonly webExtensionTips?: readonly string[];
 	readonly languageExtensionTips?: readonly string[];
 	readonly trustedExtensionUrlPublicKeys?: { [id: string]: string[]; };
 
@@ -90,6 +93,7 @@ export interface IProductConfiguration {
 	};
 
 	readonly enableTelemetry?: boolean;
+	readonly openToWelcomeMainPage?: boolean;
 	readonly aiConfig?: {
 		readonly asimovKey: string;
 	};
@@ -113,7 +117,9 @@ export interface IProductConfiguration {
 	readonly reportMarketplaceIssueUrl?: string;
 	readonly licenseUrl?: string;
 	readonly privacyStatementUrl?: string;
-	readonly telemetryOptOutUrl?: string;
+	readonly showTelemetryOptOut?: boolean;
+
+	readonly serverGreeting: string[];
 
 	readonly npsSurveyUrl?: string;
 	readonly cesSurveyUrl?: string;
@@ -139,8 +145,6 @@ export interface IProductConfiguration {
 	readonly 'configurationSync.store'?: ConfigurationSyncStore;
 
 	readonly darwinUniversalAssetId?: string;
-
-	readonly webviewContentExternalBaseUrlTemplate?: string;
 }
 
 export type ImportantExtensionTip = { name: string; languages?: string[]; pattern?: string; isExtensionPack?: boolean };
@@ -155,6 +159,7 @@ export interface IAppCenterConfiguration {
 export interface IConfigBasedExtensionTip {
 	configPath: string;
 	configName: string;
+	configScheme?: string;
 	recommendations: IStringDictionary<{ name: string, remotes?: string[], important?: boolean, isExtensionPack?: boolean }>;
 }
 

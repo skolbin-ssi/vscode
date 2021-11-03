@@ -3,10 +3,10 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { createDecorator } from 'vs/platform/instantiation/common/instantiation';
 import { Event } from 'vs/base/common/event';
 import { IProcessEnvironment, OperatingSystem } from 'vs/base/common/platform';
 import { URI, UriComponents } from 'vs/base/common/uri';
+import { createDecorator } from 'vs/platform/instantiation/common/instantiation';
 import { IGetTerminalLayoutInfoArgs, IProcessDetails, IPtyHostProcessReplayEvent, ISetTerminalLayoutInfoArgs } from 'vs/platform/terminal/common/terminalProcess';
 import { ThemeIcon } from 'vs/platform/theme/common/themeService';
 
@@ -25,6 +25,9 @@ export const enum TerminalSettingId {
 	AutomationShellLinux = 'terminal.integrated.automationShell.linux',
 	AutomationShellMacOs = 'terminal.integrated.automationShell.osx',
 	AutomationShellWindows = 'terminal.integrated.automationShell.windows',
+	AutomationProfileLinux = 'terminal.integrated.automationProfile.linux',
+	AutomationProfileMacOs = 'terminal.integrated.automationProfile.osx',
+	AutomationProfileWindows = 'terminal.integrated.automationProfile.windows',
 	ShellArgsLinux = 'terminal.integrated.shellArgs.linux',
 	ShellArgsMacOs = 'terminal.integrated.shellArgs.osx',
 	ShellArgsWindows = 'terminal.integrated.shellArgs.windows',
@@ -64,6 +67,9 @@ export const enum TerminalSettingId {
 	DetectLocale = 'terminal.integrated.detectLocale',
 	DefaultLocation = 'terminal.integrated.defaultLocation',
 	GpuAcceleration = 'terminal.integrated.gpuAcceleration',
+	TerminalTitleSeparator = 'terminal.integrated.tabs.separator',
+	TerminalTitle = 'terminal.integrated.tabs.title',
+	TerminalDescription = 'terminal.integrated.tabs.description',
 	RightClickBehavior = 'terminal.integrated.rightClickBehavior',
 	Cwd = 'terminal.integrated.cwd',
 	ConfirmOnExit = 'terminal.integrated.confirmOnExit',
@@ -81,7 +87,6 @@ export const enum TerminalSettingId {
 	SplitCwd = 'terminal.integrated.splitCwd',
 	WindowsEnableConpty = 'terminal.integrated.windowsEnableConpty',
 	WordSeparators = 'terminal.integrated.wordSeparators',
-	TitleMode = 'terminal.integrated.titleMode',
 	EnableFileLinks = 'terminal.integrated.enableFileLinks',
 	UnicodeVersion = 'terminal.integrated.unicodeVersion',
 	ExperimentalLinkProvider = 'terminal.integrated.experimentalLinkProvider',
@@ -89,8 +94,12 @@ export const enum TerminalSettingId {
 	LocalEchoExcludePrograms = 'terminal.integrated.localEchoExcludePrograms',
 	LocalEchoStyle = 'terminal.integrated.localEchoStyle',
 	EnablePersistentSessions = 'terminal.integrated.enablePersistentSessions',
+	PersistentSessionReviveProcess = 'terminal.integrated.persistentSessionReviveProcess',
+	CustomGlyphs = 'terminal.integrated.customGlyphs',
+	PersistentSessionScrollback = 'terminal.integrated.persistentSessionScrollback',
 	InheritEnv = 'terminal.integrated.inheritEnv',
 	ShowLinkHover = 'terminal.integrated.showLinkHover',
+	IgnoreProcessNames = 'terminal.integrated.ignoreProcessNames',
 }
 
 export enum WindowsShellType {
@@ -129,6 +138,7 @@ export interface IPtyHostAttachTarget {
 	workspaceName: string;
 	isOrphan: boolean;
 	icon: TerminalIcon | undefined;
+	fixedDimensions: IFixedTerminalDimensions | undefined;
 }
 
 export enum TitleEventSource {
@@ -137,7 +147,9 @@ export enum TitleEventSource {
 	/** From the process name property*/
 	Process,
 	/** From the VT sequence */
-	Sequence
+	Sequence,
+	/** Config changed */
+	Config
 }
 
 export type ITerminalsLayoutInfo = IRawTerminalsLayoutInfo<IPtyHostAttachTarget | null>;
@@ -168,6 +180,47 @@ export enum TerminalIpcChannels {
 }
 
 export const IPtyService = createDecorator<IPtyService>('ptyService');
+
+export const enum ProcessPropertyType {
+	Cwd = 'cwd',
+	InitialCwd = 'initialCwd',
+	FixedDimensions = 'fixedDimensions',
+	Title = 'title',
+	ShellType = 'shellType',
+	HasChildProcesses = 'hasChildProcesses',
+	ResolvedShellLaunchConfig = 'resolvedShellLaunchConfig',
+	OverrideDimensions = 'overrideDimensions'
+}
+
+export interface IProcessProperty<T extends ProcessPropertyType> {
+	type: T,
+	value: IProcessPropertyMap[T]
+}
+
+export interface IProcessPropertyMap {
+	[ProcessPropertyType.Cwd]: string,
+	[ProcessPropertyType.InitialCwd]: string,
+	[ProcessPropertyType.FixedDimensions]: IFixedTerminalDimensions,
+	[ProcessPropertyType.Title]: string
+	[ProcessPropertyType.ShellType]: TerminalShellType | undefined,
+	[ProcessPropertyType.HasChildProcesses]: boolean,
+	[ProcessPropertyType.ResolvedShellLaunchConfig]: IShellLaunchConfig,
+	[ProcessPropertyType.OverrideDimensions]: ITerminalDimensionsOverride | undefined
+}
+
+export interface IFixedTerminalDimensions {
+	/**
+	 * The fixed columns of the terminal.
+	 */
+	cols?: number;
+
+	/**
+	 * The fixed rows of the terminal.
+	 */
+	rows?: number;
+}
+
+
 export interface IPtyService {
 	readonly _serviceBrand: undefined;
 
@@ -178,16 +231,12 @@ export interface IPtyService {
 	readonly onPtyHostRequestResolveVariables?: Event<IRequestResolveVariablesEvent>;
 
 	readonly onProcessData: Event<{ id: number, event: IProcessDataEvent | string }>;
-	readonly onProcessExit: Event<{ id: number, event: number | undefined }>;
-	readonly onProcessReady: Event<{ id: number, event: { pid: number, cwd: string } }>;
-	readonly onProcessTitleChanged: Event<{ id: number, event: string }>;
-	readonly onProcessShellTypeChanged: Event<{ id: number, event: TerminalShellType }>;
-	readonly onProcessOverrideDimensions: Event<{ id: number, event: ITerminalDimensionsOverride | undefined }>;
-	readonly onProcessResolvedShellLaunchConfig: Event<{ id: number, event: IShellLaunchConfig }>;
+	readonly onProcessReady: Event<{ id: number, event: IProcessReadyEvent }>;
 	readonly onProcessReplay: Event<{ id: number, event: IPtyHostProcessReplayEvent }>;
 	readonly onProcessOrphanQuestion: Event<{ id: number }>;
 	readonly onDidRequestDetach: Event<{ requestId: number, workspaceId: string, instanceId: number }>;
-	readonly onProcessDidChangeHasChildProcesses: Event<{ id: number, event: boolean }>;
+	readonly onDidChangeProperty: Event<{ id: number, property: IProcessProperty<any> }>
+	readonly onProcessExit: Event<{ id: number, event: number | undefined }>;
 
 	restartPtyHost?(): Promise<void>;
 	shutdownAll?(): Promise<void>;
@@ -198,6 +247,7 @@ export interface IPtyService {
 		cwd: string,
 		cols: number,
 		rows: number,
+		unicodeVersion: '6' | '11',
 		env: IProcessEnvironment,
 		executableEnv: IProcessEnvironment,
 		windowsEnableConpty: boolean,
@@ -221,6 +271,7 @@ export interface IPtyService {
 	getCwd(id: number): Promise<string>;
 	getLatency(id: number): Promise<number>;
 	acknowledgeDataEvent(id: number, charCount: number): Promise<void>;
+	setUnicodeVersion(id: number, version: '6' | '11'): Promise<void>;
 	processBinary(id: number, data: string): Promise<void>;
 	/** Confirm the process is _not_ an orphan. */
 	orphanQuestionReply(id: number): Promise<void>;
@@ -235,6 +286,20 @@ export interface IPtyService {
 	reduceConnectionGraceTime(): Promise<void>;
 	requestDetachInstance(workspaceId: string, instanceId: number): Promise<IProcessDetails | undefined>;
 	acceptDetachInstanceReply(requestId: number, persistentProcessId?: number): Promise<void>;
+	/**
+	 * Serializes and returns terminal state.
+	 * @param ids The persistent terminal IDs to serialize.
+	 */
+	serializeTerminalState(ids: number[]): Promise<string>;
+	/**
+	 * Revives a workspaces terminal processes, these can then be reconnected to using the normal
+	 * flow for restoring terminals after reloading.
+	 */
+	reviveTerminalProcesses(state: string): Promise<void>;
+	refreshProperty(id: number, property: ProcessPropertyType): Promise<any>;
+	updateProperty(id: number, property: ProcessPropertyType, value: any): Promise<void>;
+
+	refreshIgnoreProcessNames?(names: string[]): Promise<void>;
 }
 
 export interface IRequestResolveVariablesEvent {
@@ -336,7 +401,7 @@ export interface IShellLaunchConfig {
 	/**
 	 * This is a terminal that attaches to an already running terminal.
 	 */
-	attachPersistentProcess?: { id: number; pid: number; title: string; titleSource: TitleEventSource; cwd: string; icon?: TerminalIcon; color?: string, hasChildProcesses?: boolean };
+	attachPersistentProcess?: { id: number; pid: number; title: string; titleSource: TitleEventSource; cwd: string; icon?: TerminalIcon; color?: string, hasChildProcesses?: boolean, fixedDimensions?: IFixedTerminalDimensions };
 
 	/**
 	 * Whether the terminal process environment should be exactly as provided in
@@ -384,42 +449,33 @@ export interface IShellLaunchConfig {
 	 * The color ID to use for this terminal. If not specified it will use the default fallback
 	 */
 	color?: string;
-}
 
-export interface ICreateTerminalOptions {
 	/**
-	 * The shell launch config or profile to launch with, when not specified the default terminal
-	 * profile will be used.
+	 * When a parent terminal is provided via API, the group needs
+	 * to find the index in order to place the child
+	 * directly to the right of its parent.
 	 */
-	config?: IShellLaunchConfig | ITerminalProfile | IExtensionTerminalProfile;
+	parentTerminalId?: number;
+
 	/**
-	 * The current working directory to start with, this will override IShellLaunchConfig.cwd if
-	 * specified.
+	 * The dimensions for the instance as set by the user
+	 * or via Size to Content Width
 	 */
-	cwd?: string | URI;
-	/**
-	 * Where to create the terminal, when not specified the default target will be used.
-	 */
-	target?: TerminalLocation;
-	/**
-	 * Creates a split terminal without requiring a terminal instance to split, for example when splitting
-	 * a terminal editor
-	 */
-	forceSplit?: boolean;
-	/**
-	 * The terminal's resource, passed when the terminal has moved windows.
-	 */
-	resource?: URI;
+	fixedDimensions?: IFixedTerminalDimensions;
 }
 
 export interface ICreateContributedTerminalProfileOptions {
-	target?: TerminalLocation;
-	icon?: string;
+	icon?: URI | string | { light: URI, dark: URI };
 	color?: string;
-	isSplitTerminal?: boolean;
+	location?: TerminalLocation | { viewColumn: number, preserveState?: boolean } | { splitActiveTerminal: boolean };
 }
 
-export const enum TerminalLocation {
+export enum TerminalLocation {
+	Panel = 1,
+	Editor = 2
+}
+
+export const enum TerminalLocationString {
 	TerminalView = 'view',
 	Editor = 'editor'
 }
@@ -448,7 +504,12 @@ export interface ITerminalLaunchError {
 export interface IProcessReadyEvent {
 	pid: number,
 	cwd: string,
+	capabilities: ProcessCapability[],
 	requiresWindowsMode?: boolean
+}
+
+export const enum ProcessCapability {
+	CwdDetection = 'cwdDetection'
 }
 
 /**
@@ -468,14 +529,15 @@ export interface ITerminalChildProcess {
 	 */
 	shouldPersist: boolean;
 
+	/**
+	 * Capabilities of the process, designated when it starts
+	 */
+	capabilities: ProcessCapability[];
+
 	onProcessData: Event<IProcessDataEvent | string>;
-	onProcessExit: Event<number | undefined>;
 	onProcessReady: Event<IProcessReadyEvent>;
-	onProcessTitleChanged: Event<string>;
-	onProcessShellTypeChanged: Event<TerminalShellType>;
-	onProcessOverrideDimensions?: Event<ITerminalDimensionsOverride | undefined>;
-	onProcessResolvedShellLaunchConfig?: Event<IShellLaunchConfig>;
-	onDidChangeHasChildProcesses?: Event<boolean>;
+	onDidChangeProperty: Event<IProcessProperty<any>>;
+	onProcessExit: Event<number | undefined>;
 
 	/**
 	 * Starts the process.
@@ -509,14 +571,23 @@ export interface ITerminalChildProcess {
 	 */
 	acknowledgeDataEvent(charCount: number): void;
 
+	/**
+	 * Sets the unicode version for the process, this drives the size of some characters in the
+	 * xterm-headless instance.
+	 */
+	setUnicodeVersion(version: '6' | '11'): Promise<void>;
+
 	getInitialCwd(): Promise<string>;
 	getCwd(): Promise<string>;
 	getLatency(): Promise<number>;
+	refreshProperty<T extends ProcessPropertyType>(property: ProcessPropertyType): Promise<IProcessPropertyMap[T]>;
+	updateProperty<T extends ProcessPropertyType>(property: ProcessPropertyType, value: IProcessPropertyMap[T]): Promise<void>;
 }
 
 export interface IReconnectConstants {
-	GraceTime: number,
-	ShortGraceTime: number
+	graceTime: number;
+	shortGraceTime: number;
+	scrollback: number;
 }
 
 export const enum LocalReconnectConstants {
@@ -623,7 +694,7 @@ export interface ITerminalContributions {
 export interface ITerminalProfileContribution {
 	title: string;
 	id: string;
-	icon?: string;
+	icon?: URI | { light: URI, dark: URI } | string;
 	color?: string;
 }
 

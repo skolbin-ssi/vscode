@@ -20,7 +20,7 @@ import { localize } from 'vs/nls';
 import { MenuId, MenuRegistry, registerAction2, Action2 } from 'vs/platform/actions/common/actions';
 import { CommandsRegistry, ICommandService } from 'vs/platform/commands/common/commands';
 import { IConfigurationService } from 'vs/platform/configuration/common/configuration';
-import { ContextKeyEqualsExpr, ContextKeyExpr, IContextKey, IContextKeyService, RawContextKey } from 'vs/platform/contextkey/common/contextkey';
+import { ContextKeyExpr, IContextKey, IContextKeyService, RawContextKey } from 'vs/platform/contextkey/common/contextkey';
 import { IDialogService } from 'vs/platform/dialogs/common/dialogs';
 import { IInstantiationService } from 'vs/platform/instantiation/common/instantiation';
 import { INotificationService, Severity } from 'vs/platform/notification/common/notification';
@@ -33,7 +33,8 @@ import {
 } from 'vs/platform/userDataSync/common/userDataSync';
 import { FloatingClickWidget } from 'vs/workbench/browser/codeeditor';
 import { IWorkbenchContribution } from 'vs/workbench/common/contributions';
-import { IEditorInput, EditorResourceAccessor, SideBySideEditor } from 'vs/workbench/common/editor';
+import { EditorResourceAccessor, SideBySideEditor } from 'vs/workbench/common/editor';
+import { EditorInput } from 'vs/workbench/common/editor/editorInput';
 import { DiffEditorInput } from 'vs/workbench/common/editor/diffEditorInput';
 import * as Constants from 'vs/workbench/contrib/logs/common/logConstants';
 import { IOutputService } from 'vs/workbench/contrib/output/common/output';
@@ -394,7 +395,7 @@ export class UserDataSyncWorkbenchContribution extends Disposable implements IWo
 			message: operationId ? `${message} ${operationId}` : message,
 			actions: {
 				primary: [new Action('open sync file', localize('open file', "Open {0} File", getSyncAreaLabel(resource)), undefined, true,
-					() => resource === SyncResource.Settings ? this.preferencesService.openGlobalSettings(true) : this.preferencesService.openGlobalKeybindingSettings(true))]
+					() => resource === SyncResource.Settings ? this.preferencesService.openUserSettings({ jsonEditor: true }) : this.preferencesService.openGlobalKeybindingSettings(true))]
 			}
 		});
 	}
@@ -439,7 +440,7 @@ export class UserDataSyncWorkbenchContribution extends Disposable implements IWo
 			message: localize('errorInvalidConfiguration', "Unable to sync {0} because the content in the file is not valid. Please open the file and correct it.", errorArea.toLowerCase()),
 			actions: {
 				primary: [new Action('open sync file', localize('open file', "Open {0} File", errorArea), undefined, true,
-					() => source === SyncResource.Settings ? this.preferencesService.openGlobalSettings(true) : this.preferencesService.openGlobalKeybindingSettings(true))]
+					() => source === SyncResource.Settings ? this.preferencesService.openUserSettings({ jsonEditor: true }) : this.preferencesService.openGlobalKeybindingSettings(true))]
 			}
 		});
 		this.invalidContentErrorDisposables.set(source, toDisposable(() => {
@@ -696,7 +697,7 @@ export class UserDataSyncWorkbenchContribution extends Disposable implements IWo
 		}) as DiffEditorInput[];
 	}
 
-	private getAllConflictsEditorInputs(): IEditorInput[] {
+	private getAllConflictsEditorInputs(): EditorInput[] {
 		return this.editorService.editors.filter(input => {
 			const resource = input instanceof DiffEditorInput ? input.primary.resource : input.resource;
 			return resource && getSyncResourceFromLocalPreview(resource!, this.environmentService) !== undefined;
@@ -1161,7 +1162,7 @@ export class UserDataSyncWorkbenchContribution extends Disposable implements IWo
 						when
 					}, {
 						id: MenuId.ViewContainerTitle,
-						when: ContextKeyEqualsExpr.create('viewContainer', SYNC_VIEW_CONTAINER_ID),
+						when: ContextKeyExpr.equals('viewContainer', SYNC_VIEW_CONTAINER_ID),
 						group: 'navigation',
 						order: 2
 					}]
@@ -1185,7 +1186,7 @@ export class UserDataSyncWorkbenchContribution extends Disposable implements IWo
 						when: ContextKeyExpr.and(CONTEXT_SYNC_STATE.notEqualsTo(SyncStatus.Uninitialized)),
 					}, {
 						id: MenuId.ViewContainerTitle,
-						when: ContextKeyEqualsExpr.create('viewContainer', SYNC_VIEW_CONTAINER_ID),
+						when: ContextKeyExpr.equals('viewContainer', SYNC_VIEW_CONTAINER_ID),
 						group: 'navigation',
 						order: 1
 					}],
@@ -1208,7 +1209,7 @@ export class UserDataSyncWorkbenchContribution extends Disposable implements IWo
 				});
 			}
 			run(accessor: ServicesAccessor): any {
-				accessor.get(IPreferencesService).openGlobalSettings(false, { query: '@tag:sync' });
+				accessor.get(IPreferencesService).openUserSettings({ jsonEditor: false, query: '@tag:sync' });
 			}
 		}));
 	}
@@ -1234,7 +1235,7 @@ export class UserDataSyncWorkbenchContribution extends Disposable implements IWo
 				id: 'workbench.userDataSync.actions.help',
 				title: CATEGORIES.Help.value
 			},
-			when: ContextKeyEqualsExpr.create('viewContainer', SYNC_VIEW_CONTAINER_ID),
+			when: ContextKeyExpr.equals('viewContainer', SYNC_VIEW_CONTAINER_ID),
 			group: '1_help',
 		});
 	}
@@ -1267,7 +1268,7 @@ export class UserDataSyncWorkbenchContribution extends Disposable implements IWo
 					title: localize('workbench.actions.syncData.reset', "Clear Data in Cloud..."),
 					menu: [{
 						id: MenuId.ViewContainerTitle,
-						when: ContextKeyEqualsExpr.create('viewContainer', SYNC_VIEW_CONTAINER_ID),
+						when: ContextKeyExpr.equals('viewContainer', SYNC_VIEW_CONTAINER_ID),
 						group: '0_configure',
 					}],
 				});

@@ -9,7 +9,7 @@ import { URI } from 'vs/base/common/uri';
 import { StoredFileWorkingCopy, StoredFileWorkingCopyState, IStoredFileWorkingCopyModel, IStoredFileWorkingCopyModelContentChangedEvent, IStoredFileWorkingCopyModelFactory } from 'vs/workbench/services/workingCopy/common/storedFileWorkingCopy';
 import { bufferToStream, newWriteableBufferStream, streamToBuffer, VSBuffer, VSBufferReadableStream } from 'vs/base/common/buffer';
 import { CancellationToken } from 'vs/base/common/cancellation';
-import { Disposable } from 'vs/base/common/lifecycle';
+import { Disposable, DisposableStore } from 'vs/base/common/lifecycle';
 import { TestServiceAccessor, workbenchInstantiationService } from 'vs/workbench/test/browser/workbenchTestServices';
 import { IInstantiationService } from 'vs/platform/instantiation/common/instantiation';
 import { basename } from 'vs/base/common/resources';
@@ -92,17 +92,19 @@ suite('StoredFileWorkingCopy', function () {
 
 	const factory = new TestStoredFileWorkingCopyModelFactory();
 
+	let disposables: DisposableStore;
 	let resource = URI.file('test/resource');
 	let instantiationService: IInstantiationService;
 	let accessor: TestServiceAccessor;
 	let workingCopy: StoredFileWorkingCopy<TestStoredFileWorkingCopyModel>;
 
 	function createWorkingCopy(uri: URI = resource) {
-		return new StoredFileWorkingCopy<TestStoredFileWorkingCopyModel>('testStoredFileWorkingCopyType', uri, basename(uri), factory, accessor.fileService, accessor.logService, accessor.textFileService, accessor.filesConfigurationService, accessor.workingCopyBackupService, accessor.workingCopyService, accessor.notificationService, accessor.workingCopyEditorService, accessor.editorService, accessor.elevatedFileService);
+		return new StoredFileWorkingCopy<TestStoredFileWorkingCopyModel>('testStoredFileWorkingCopyType', uri, basename(uri), factory, accessor.fileService, accessor.logService, accessor.workingCopyFileService, accessor.filesConfigurationService, accessor.workingCopyBackupService, accessor.workingCopyService, accessor.notificationService, accessor.workingCopyEditorService, accessor.editorService, accessor.elevatedFileService);
 	}
 
 	setup(() => {
-		instantiationService = workbenchInstantiationService();
+		disposables = new DisposableStore();
+		instantiationService = workbenchInstantiationService(undefined, disposables);
 		accessor = instantiationService.createInstance(TestServiceAccessor);
 
 		workingCopy = createWorkingCopy();
@@ -110,6 +112,7 @@ suite('StoredFileWorkingCopy', function () {
 
 	teardown(() => {
 		workingCopy.dispose();
+		disposables.dispose();
 	});
 
 	test('registers with working copy service', async () => {
@@ -599,6 +602,35 @@ suite('StoredFileWorkingCopy', function () {
 		}
 
 		assert.ok(error);
+	});
+
+	test('save participant', async () => {
+		await workingCopy.resolve();
+
+		assert.strictEqual(accessor.workingCopyFileService.hasSaveParticipants, false);
+
+		let participationCounter = 0;
+		const disposable = accessor.workingCopyFileService.addSaveParticipant({
+			participate: async (wc) => {
+				if (workingCopy === wc) {
+					participationCounter++;
+				}
+			}
+		});
+
+		assert.strictEqual(accessor.workingCopyFileService.hasSaveParticipants, true);
+
+		await workingCopy.save({ force: true });
+		assert.strictEqual(participationCounter, 1);
+
+		await workingCopy.save({ force: true, skipSaveParticipants: true });
+		assert.strictEqual(participationCounter, 1);
+
+		disposable.dispose();
+		assert.strictEqual(accessor.workingCopyFileService.hasSaveParticipants, false);
+
+		await workingCopy.save({ force: true });
+		assert.strictEqual(participationCounter, 1);
 	});
 
 	test('revert', async () => {

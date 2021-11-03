@@ -20,6 +20,8 @@ import { ExtensionIdentifier, IExtensionDescription } from 'vs/platform/extensio
 import { checkProposedApiEnabled } from 'vs/workbench/services/extensions/common/extensions';
 import { MarshalledId } from 'vs/base/common/marshalling';
 import { ThemeIcon } from 'vs/platform/theme/common/themeService';
+import { IMarkdownString } from 'vs/base/common/htmlContent';
+import { MarkdownString } from 'vs/workbench/api/common/extHostTypeConverters';
 
 type ProviderHandle = number;
 type GroupHandle = number;
@@ -275,7 +277,7 @@ export class ExtHostSCMInputBox implements vscode.SourceControlInputBox {
 		this._proxy.$setInputBoxFocus(this._sourceControlHandle);
 	}
 
-	showValidationMessage(message: string, type: vscode.SourceControlInputBoxValidationType) {
+	showValidationMessage(message: string | vscode.MarkdownString, type: vscode.SourceControlInputBoxValidationType) {
 		checkProposedApiEnabled(this._extension);
 
 		this._proxy.$showValidationMessage(this._sourceControlHandle, message, type as any);
@@ -507,6 +509,23 @@ class ExtHostSourceControl implements vscode.SourceControl {
 		this._proxy.$updateSourceControl(this.handle, { acceptInputCommand: internal });
 	}
 
+	private _actionButtonDisposables = new MutableDisposable<DisposableStore>();
+	private _actionButton: vscode.Command | undefined;
+	get actionButton(): vscode.Command | undefined {
+		checkProposedApiEnabled(this._extension);
+		return this._actionButton;
+	}
+	set actionButton(actionButton: vscode.Command | undefined) {
+		checkProposedApiEnabled(this._extension);
+		this._actionButtonDisposables.value = new DisposableStore();
+
+		this._actionButton = actionButton;
+
+		const internal = actionButton !== undefined ? this._commands.converter.toInternal(this._actionButton, this._actionButtonDisposables.value) : undefined;
+		this._proxy.$updateSourceControl(this.handle, { actionButton: internal ?? null });
+	}
+
+
 	private _statusBarDisposables = new MutableDisposable<DisposableStore>();
 	private _statusBarCommands: vscode.Command[] | undefined = undefined;
 
@@ -539,7 +558,7 @@ class ExtHostSourceControl implements vscode.SourceControl {
 	private handle: number = ExtHostSourceControl._handlePool++;
 
 	constructor(
-		_extension: IExtensionDescription,
+		private readonly _extension: IExtensionDescription,
 		private _proxy: MainThreadSCMShape,
 		private _commands: ExtHostCommands,
 		private _id: string,
@@ -628,6 +647,7 @@ class ExtHostSourceControl implements vscode.SourceControl {
 
 	dispose(): void {
 		this._acceptInputDisposables.dispose();
+		this._actionButtonDisposables.dispose();
 		this._statusBarDisposables.dispose();
 
 		this._groups.forEach(group => group.dispose());
@@ -770,7 +790,7 @@ export class ExtHostSCM implements ExtHostSCMShape {
 		return group.$executeResourceCommand(handle, preserveFocus);
 	}
 
-	$validateInput(sourceControlHandle: number, value: string, cursorPosition: number): Promise<[string, number] | undefined> {
+	$validateInput(sourceControlHandle: number, value: string, cursorPosition: number): Promise<[string | IMarkdownString, number] | undefined> {
 		this.logService.trace('ExtHostSCM#$validateInput', sourceControlHandle);
 
 		const sourceControl = this._sourceControls.get(sourceControlHandle);
@@ -788,7 +808,12 @@ export class ExtHostSCM implements ExtHostSCMShape {
 				return Promise.resolve(undefined);
 			}
 
-			return Promise.resolve<[string, number]>([result.message, result.type]);
+			const message = MarkdownString.fromStrict(result.message);
+			if (!message) {
+				return Promise.resolve(undefined);
+			}
+
+			return Promise.resolve<[string | IMarkdownString, number]>([message, result.type]);
 		});
 	}
 

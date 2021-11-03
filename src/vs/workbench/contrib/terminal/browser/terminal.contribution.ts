@@ -13,12 +13,11 @@ import { CommandsRegistry } from 'vs/platform/commands/common/commands';
 import { ContextKeyExpr, ContextKeyExpression } from 'vs/platform/contextkey/common/contextkey';
 import { KeybindingWeight, KeybindingsRegistry, IKeybindings } from 'vs/platform/keybinding/common/keybindingsRegistry';
 import { Registry } from 'vs/platform/registry/common/platform';
-import * as panel from 'vs/workbench/browser/panel';
 import { getQuickNavigateHandler } from 'vs/workbench/browser/quickaccess';
 import { Extensions as ViewContainerExtensions, IViewContainersRegistry, ViewContainerLocation, IViewsRegistry } from 'vs/workbench/common/views';
 import { registerTerminalActions, terminalSendSequenceCommand } from 'vs/workbench/contrib/terminal/browser/terminalActions';
 import { TerminalViewPane } from 'vs/workbench/contrib/terminal/browser/terminalView';
-import { TERMINAL_VIEW_ID, TerminalCommandId } from 'vs/workbench/contrib/terminal/common/terminal';
+import { TERMINAL_VIEW_ID, TerminalCommandId, ITerminalProfileService } from 'vs/workbench/contrib/terminal/common/terminal';
 import { registerColors } from 'vs/workbench/contrib/terminal/common/terminalColorRegistry';
 import { setupTerminalCommands } from 'vs/workbench/contrib/terminal/browser/terminalCommands';
 import { TerminalService } from 'vs/workbench/contrib/terminal/browser/terminalService';
@@ -46,6 +45,7 @@ import { TerminalEditorService } from 'vs/workbench/contrib/terminal/browser/ter
 import { TerminalInputSerializer } from 'vs/workbench/contrib/terminal/browser/terminalEditorSerializer';
 import { TerminalGroupService } from 'vs/workbench/contrib/terminal/browser/terminalGroupService';
 import { TerminalContextKeys, TerminalContextKeyStrings } from 'vs/workbench/contrib/terminal/common/terminalContextKey';
+import { TerminalProfileService } from 'vs/workbench/contrib/terminal/browser/terminalProfileService';
 
 // Register services
 registerSingleton(ITerminalService, TerminalService, true);
@@ -53,6 +53,7 @@ registerSingleton(ITerminalEditorService, TerminalEditorService, true);
 registerSingleton(ITerminalGroupService, TerminalGroupService, true);
 registerSingleton(IRemoteTerminalService, RemoteTerminalService);
 registerSingleton(ITerminalInstanceService, TerminalInstanceService, true);
+registerSingleton(ITerminalProfileService, TerminalProfileService, true);
 
 // Register quick accesses
 const quickAccessRegistry = (Registry.as<IQuickAccessRegistry>(QuickAccessExtensions.Quickaccess));
@@ -94,8 +95,7 @@ const VIEW_CONTAINER = Registry.as<IViewContainersRegistry>(ViewContainerExtensi
 	storageId: TERMINAL_VIEW_ID,
 	hideIfEmpty: true,
 	order: 3,
-}, ViewContainerLocation.Panel, { donotRegisterOpenCommand: true });
-Registry.as<panel.PanelRegistry>(panel.Extensions.Panels).setDefaultPanelId(TERMINAL_VIEW_ID);
+}, ViewContainerLocation.Panel, { donotRegisterOpenCommand: true, isDefault: true });
 Registry.as<IViewsRegistry>(ViewContainerExtensions.ViewsRegistry).registerViews([{
 	id: TERMINAL_VIEW_ID,
 	name: nls.localize('terminal', "Terminal"),
@@ -107,8 +107,8 @@ Registry.as<IViewsRegistry>(ViewContainerExtensions.ViewsRegistry).registerViews
 		id: TerminalCommandId.Toggle,
 		mnemonicTitle: nls.localize({ key: 'miToggleIntegratedTerminal', comment: ['&& denotes a mnemonic'] }, "&&Terminal"),
 		keybindings: {
-			primary: KeyMod.CtrlCmd | KeyCode.US_BACKTICK,
-			mac: { primary: KeyMod.WinCtrl | KeyCode.US_BACKTICK }
+			primary: KeyMod.CtrlCmd | KeyCode.Backquote,
+			mac: { primary: KeyMod.WinCtrl | KeyCode.Backquote }
 		},
 		order: 3
 	}
@@ -141,7 +141,7 @@ const CTRL_LETTER_OFFSET = 64;
 if (isWindows) {
 	registerSendSequenceKeybinding(String.fromCharCode('V'.charCodeAt(0) - CTRL_LETTER_OFFSET), { // ctrl+v
 		when: ContextKeyExpr.and(TerminalContextKeys.focus, ContextKeyExpr.equals(TerminalContextKeyStrings.ShellType, WindowsShellType.PowerShell), CONTEXT_ACCESSIBILITY_MODE_ENABLED.negate()),
-		primary: KeyMod.CtrlCmd | KeyCode.KEY_V
+		primary: KeyMod.CtrlCmd | KeyCode.KeyV
 	});
 }
 
@@ -149,7 +149,7 @@ if (isWindows) {
 if (isIOS) {
 	registerSendSequenceKeybinding(String.fromCharCode('C'.charCodeAt(0) - CTRL_LETTER_OFFSET), { // ctrl+c
 		when: ContextKeyExpr.and(TerminalContextKeys.focus),
-		primary: KeyMod.WinCtrl | KeyCode.KEY_C
+		primary: KeyMod.WinCtrl | KeyCode.KeyC
 	});
 }
 
@@ -167,7 +167,7 @@ if (isWindows) {
 	});
 }
 // Delete word right: alt+d
-registerSendSequenceKeybinding('\x1bd', {
+registerSendSequenceKeybinding('\u000d', {
 	primary: KeyMod.CtrlCmd | KeyCode.Delete,
 	mac: { primary: KeyMod.Alt | KeyCode.Delete }
 });
@@ -182,6 +182,25 @@ registerSendSequenceKeybinding(String.fromCharCode('A'.charCodeAt(0) - 64), {
 // Move to line end: ctrl+E
 registerSendSequenceKeybinding(String.fromCharCode('E'.charCodeAt(0) - 64), {
 	mac: { primary: KeyMod.CtrlCmd | KeyCode.RightArrow }
+});
+// Break: ctrl+C
+registerSendSequenceKeybinding(String.fromCharCode('C'.charCodeAt(0) - 64), {
+	mac: { primary: KeyMod.CtrlCmd | KeyCode.Period }
+});
+// NUL: ctrl+shift+2
+registerSendSequenceKeybinding('\u0000', {
+	primary: KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.Digit2,
+	mac: { primary: KeyMod.WinCtrl | KeyMod.Shift | KeyCode.Digit2 }
+});
+// RS: ctrl+shift+6
+registerSendSequenceKeybinding('\u001e', {
+	primary: KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.Digit6,
+	mac: { primary: KeyMod.WinCtrl | KeyMod.Shift | KeyCode.Digit6 }
+});
+// US (Undo): ctrl+/
+registerSendSequenceKeybinding('\u001f', {
+	primary: KeyMod.CtrlCmd | KeyCode.Slash,
+	mac: { primary: KeyMod.WinCtrl | KeyCode.Slash }
 });
 
 setupTerminalCommands();

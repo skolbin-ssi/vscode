@@ -23,7 +23,7 @@ import { Action } from 'vs/base/common/actions';
 import { MarkdownString } from 'vs/base/common/htmlContent';
 import { TerminalDecorationsProvider } from 'vs/workbench/contrib/terminal/browser/terminalDecorationsProvider';
 import { DEFAULT_LABELS_CONTAINER, IResourceLabel, ResourceLabels } from 'vs/workbench/browser/labels';
-import { IDecorationsService } from 'vs/workbench/services/decorations/browser/decorations';
+import { IDecorationsService } from 'vs/workbench/services/decorations/common/decorations';
 import { IHoverAction, IHoverService } from 'vs/workbench/services/hover/browser/hover';
 import Severity from 'vs/base/common/severity';
 import { Disposable, DisposableStore, dispose, IDisposable, toDisposable } from 'vs/base/common/lifecycle';
@@ -131,7 +131,7 @@ export class TerminalTabList extends WorkbenchList<ITerminalInstance> {
 		this.onMouseDblClick(async e => {
 			const focus = this.getFocus();
 			if (focus.length === 0) {
-				const instance = await this._terminalService.createTerminal({ target: TerminalLocation.TerminalView });
+				const instance = await this._terminalService.createTerminal({ location: TerminalLocation.Panel });
 				this._terminalGroupService.setActiveInstance(instance);
 				await instance.focusWhenReady();
 			}
@@ -144,7 +144,7 @@ export class TerminalTabList extends WorkbenchList<ITerminalInstance> {
 		// unless multi-selection is in progress
 		this.onMouseClick(async e => {
 			if (e.browserEvent.altKey && e.element) {
-				await this._terminalService.splitInstance(e.element);
+				await this._terminalService.createTerminal({ location: { parentTerminal: e.element } });
 			} else if (this._getFocusMode() === 'singleClick') {
 				if (this.getSelection().length <= 1) {
 					e.element?.focus(true);
@@ -192,7 +192,11 @@ export class TerminalTabList extends WorkbenchList<ITerminalInstance> {
 		return this._configurationService.getValue<'singleClick' | 'doubleClick'>(TerminalSettingId.TabsFocusMode);
 	}
 
-	refresh(): void {
+	refresh(cancelEditing: boolean = true): void {
+		if (cancelEditing && this._terminalService.isEditable(undefined)) {
+			this.domFocus();
+		}
+
 		this.splice(0, this.length, this._terminalGroupService.instances.slice());
 	}
 
@@ -289,11 +293,12 @@ class TerminalTabsRenderer implements IListRenderer<ITerminalInstance, ITerminal
 			}
 		}
 
-		let title = instance.title;
+
+		let statusString = '';
 		const statuses = instance.statusList.statuses;
 		template.context.hoverActions = [];
 		for (const status of statuses) {
-			title += `\n\n---\n\n${status.icon ? `$(${status.icon?.id}) ` : ''}${status.tooltip || status.id}`;
+			statusString += `\n\n---\n\n${status.icon ? `$(${status.icon?.id}) ` : ''}${status.tooltip || status.id}`;
 			if (status.hoverActions) {
 				template.context.hoverActions.push(...status.hoverActions);
 			}
@@ -323,12 +328,12 @@ class TerminalTabsRenderer implements IListRenderer<ITerminalInstance, ITerminal
 			template.actionBar.clear();
 		}
 
-		if (!template.elementDispoables) {
-			template.elementDispoables = new DisposableStore();
+		if (!template.elementDisposables) {
+			template.elementDisposables = new DisposableStore();
 		}
 
 		// Kill terminal on middle click
-		template.elementDispoables.add(DOM.addDisposableListener(template.element, DOM.EventType.AUXCLICK, e => {
+		template.elementDisposables.add(DOM.addDisposableListener(template.element, DOM.EventType.AUXCLICK, e => {
 			e.stopImmediatePropagation();
 			if (e.button === 1/*middle*/) {
 				this._terminalService.safeDisposeTerminal(instance);
@@ -348,14 +353,14 @@ class TerminalTabsRenderer implements IListRenderer<ITerminalInstance, ITerminal
 		template.label.setResource({
 			resource: instance.resource,
 			name: label,
-			description: hasText ? instance.shellLaunchConfig.description : undefined
+			description: hasText ? instance.description : undefined
 		}, {
 			fileDecorations: {
 				colors: true,
 				badges: hasText
 			},
 			title: {
-				markdown: new MarkdownString(title, { supportThemeIcons: true }),
+				markdown: new MarkdownString(instance.title + statusString, { supportThemeIcons: true }),
 				markdownNotSupportedFallback: undefined
 			},
 			extraClasses
@@ -363,14 +368,13 @@ class TerminalTabsRenderer implements IListRenderer<ITerminalInstance, ITerminal
 		const editableData = this._terminalService.getEditableData(instance);
 		template.label.element.classList.toggle('editable-tab', !!editableData);
 		if (editableData) {
-			this._renderInputBox(template.label.element.querySelector('.monaco-icon-label-container')!, instance, editableData);
+			template.elementDisposables.add(this._renderInputBox(template.label.element.querySelector('.monaco-icon-label-container')!, instance, editableData));
 			template.actionBar.clear();
 		}
 	}
 
 	private _renderInputBox(container: HTMLElement, instance: ITerminalInstance, editableData: IEditableData): IDisposable {
 
-		const label = this._labels.create(container);
 		const value = instance.title || '';
 
 		const inputBox = new InputBox(container, this._contextViewService, {
@@ -438,7 +442,6 @@ class TerminalTabsRenderer implements IListRenderer<ITerminalInstance, ITerminal
 			DOM.addDisposableListener(inputBox.inputElement, DOM.EventType.BLUR, () => {
 				done(inputBox.isInputValid(), true);
 			}),
-			label,
 			styler
 		];
 
@@ -448,21 +451,24 @@ class TerminalTabsRenderer implements IListRenderer<ITerminalInstance, ITerminal
 	}
 
 	disposeElement(instance: ITerminalInstance, index: number, templateData: ITerminalTabEntryTemplate): void {
-		templateData.elementDispoables?.dispose();
-		templateData.elementDispoables = undefined;
+		templateData.elementDisposables?.dispose();
+		templateData.elementDisposables = undefined;
 	}
 
 	disposeTemplate(templateData: ITerminalTabEntryTemplate): void {
+		templateData.elementDisposables?.dispose();
+		templateData.elementDisposables = undefined;
+		templateData.label.dispose();
 	}
 
 	fillActionBar(instance: ITerminalInstance, template: ITerminalTabEntryTemplate): void {
 		// If the instance is within the selection, split all selected
 		const actions = [
 			new Action(TerminalCommandId.SplitInstance, terminalStrings.split.short, ThemeIcon.asClassName(Codicon.splitHorizontal), true, async () => {
-				this._runForSelectionOrInstance(instance, e => this._terminalService.splitInstance(e));
+				this._runForSelectionOrInstance(instance, e => this._terminalService.createTerminal({ location: { parentTerminal: e } }));
 			}),
 			new Action(TerminalCommandId.KillInstance, terminalStrings.kill.short, ThemeIcon.asClassName(Codicon.trashcan), true, async () => {
-				this._runForSelectionOrInstance(instance, e => e.dispose());
+				this._runForSelectionOrInstance(instance, e => this._terminalService.safeDisposeTerminal(e));
 			})
 		];
 		// TODO: Cache these in a way that will use the correct instance
@@ -495,7 +501,7 @@ interface ITerminalTabEntryTemplate {
 	context: {
 		hoverActions?: IHoverAction[];
 	};
-	elementDispoables?: DisposableStore;
+	elementDisposables?: DisposableStore;
 }
 
 

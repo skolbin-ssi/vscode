@@ -4,12 +4,15 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { FileAccess } from 'vs/base/common/network';
-import { isWeb, globals } from 'vs/base/common/platform';
+import { globals } from 'vs/base/common/platform';
 import { env } from 'vs/base/common/process';
-import { dirname, joinPath } from 'vs/base/common/resources';
 import { IProductConfiguration } from 'vs/base/common/product';
+import { dirname, joinPath } from 'vs/base/common/resources';
 import { ISandboxConfiguration } from 'vs/base/parts/sandbox/common/sandboxTypes';
 
+/**
+ * @deprecated You MUST use `IProductService` if possible.
+ */
 let product: IProductConfiguration;
 
 // Native sandbox environment
@@ -54,9 +57,9 @@ else {
 	// Running out of sources
 	if (Object.keys(product).length === 0) {
 		Object.assign(product, {
-			version: '1.59.0-dev',
-			nameShort: isWeb ? 'Code Web - OSS Dev' : 'Code - OSS Dev',
-			nameLong: isWeb ? 'Code Web - OSS Dev' : 'Code - OSS Dev',
+			version: '1.62.0-dev',
+			nameShort: 'Code - OSS Dev',
+			nameLong: 'Code - OSS Dev',
 			applicationName: 'code-oss',
 			dataFolderName: '.vscode-oss',
 			urlProtocol: 'code-oss',
@@ -75,4 +78,7 @@ else {
 	}
 }
 
+/**
+ * @deprecated You MUST use `IProductService` if possible.
+ */
 export default product;

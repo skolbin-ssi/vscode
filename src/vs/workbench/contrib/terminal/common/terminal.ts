@@ -8,7 +8,7 @@ import { Event } from 'vs/base/common/event';
 import { IDisposable } from 'vs/base/common/lifecycle';
 import { IProcessEnvironment, OperatingSystem } from 'vs/base/common/platform';
 import { IExtensionPointDescriptor } from 'vs/workbench/services/extensions/common/extensionsRegistry';
-import { IProcessDataEvent, IProcessReadyEvent, IShellLaunchConfig, ITerminalChildProcess, ITerminalDimensions, ITerminalDimensionsOverride, ITerminalLaunchError, ITerminalProfile, ITerminalProfileObject, ITerminalsLayoutInfo, ITerminalsLayoutInfoById, TerminalIcon, TerminalLocation, TerminalShellType, TitleEventSource } from 'vs/platform/terminal/common/terminal';
+import { IProcessDataEvent, IProcessReadyEvent, IShellLaunchConfig, ITerminalChildProcess, ITerminalLaunchError, ITerminalProfile, ITerminalProfileObject, ITerminalsLayoutInfo, ITerminalsLayoutInfoById, TerminalIcon, TerminalLocationString, IProcessProperty, TitleEventSource, ProcessPropertyType, IFixedTerminalDimensions, IExtensionTerminalProfile, ICreateContributedTerminalProfileOptions } from 'vs/platform/terminal/common/terminal';
 import { IEnvironmentVariableInfo } from 'vs/workbench/contrib/terminal/common/environmentVariable';
 import { createDecorator } from 'vs/platform/instantiation/common/instantiation';
 import { URI } from 'vs/base/common/uri';
@@ -56,6 +56,25 @@ export interface ITerminalProfileResolverService {
 	createProfileFromShellAndShellArgs(shell?: unknown, shellArgs?: unknown): Promise<ITerminalProfile | string>;
 }
 
+export const ITerminalProfileService = createDecorator<ITerminalProfileService>('terminalProfileService');
+export interface ITerminalProfileService {
+	readonly _serviceBrand: undefined;
+	readonly availableProfiles: ITerminalProfile[];
+	readonly contributedProfiles: IExtensionTerminalProfile[];
+	readonly profilesReady: Promise<void>;
+	refreshAvailableProfiles(): void;
+	getDefaultProfileName(): string;
+	onDidChangeAvailableProfiles: Event<ITerminalProfile[]>;
+	getContributedDefaultProfile(shellLaunchConfig: IShellLaunchConfig): Promise<IExtensionTerminalProfile | undefined>;
+	registerContributedProfile(extensionIdentifier: string, id: string, title: string, options: ICreateContributedTerminalProfileOptions): Promise<void>;
+	getContributedProfileProvider(extensionIdentifier: string, id: string): ITerminalProfileProvider | undefined;
+	registerTerminalProfileProvider(extensionIdentifier: string, id: string, profileProvider: ITerminalProfileProvider): IDisposable;
+}
+
+export interface ITerminalProfileProvider {
+	createContributedTerminalProfile(options: ICreateContributedTerminalProfileOptions): Promise<void>;
+}
+
 export interface IShellLaunchConfigResolveOptions {
 	remoteAuthority: string | undefined;
 	os: OperatingSystem;
@@ -97,11 +116,21 @@ export interface IOffProcessTerminalService {
 	reduceConnectionGraceTime(): Promise<void>;
 	requestDetachInstance(workspaceId: string, instanceId: number): Promise<IProcessDetails | undefined>;
 	acceptDetachInstanceReply(requestId: number, persistentProcessId?: number): Promise<void>;
+	persistTerminalState(): Promise<void>;
 }
 
 export const ILocalTerminalService = createDecorator<ILocalTerminalService>('localTerminalService');
 export interface ILocalTerminalService extends IOffProcessTerminalService {
-	createProcess(shellLaunchConfig: IShellLaunchConfig, cwd: string, cols: number, rows: number, env: IProcessEnvironment, windowsEnableConpty: boolean, shouldPersist: boolean): Promise<ITerminalChildProcess>;
+	createProcess(
+		shellLaunchConfig: IShellLaunchConfig,
+		cwd: string,
+		cols: number,
+		rows: number,
+		unicodeVersion: '6' | '11',
+		env: IProcessEnvironment,
+		windowsEnableConpty: boolean,
+		shouldPersist: boolean
+	): Promise<ITerminalChildProcess>;
 }
 
 export type FontWeight = 'normal' | 'bold' | number;
@@ -144,7 +173,7 @@ export interface ITerminalConfiguration {
 	gpuAcceleration: 'auto' | 'on' | 'canvas' | 'off';
 	rightClickBehavior: 'default' | 'copyPaste' | 'paste' | 'selectWord';
 	cursorBlinking: boolean;
-	cursorStyle: string;
+	cursorStyle: 'block' | 'underline' | 'line';
 	cursorWidth: number;
 	drawBoldTextInBrightColors: boolean;
 	fastScrollSensitivity: number;
@@ -178,7 +207,6 @@ export interface ITerminalConfiguration {
 	splitCwd: 'workspaceRoot' | 'initial' | 'inherited';
 	windowsEnableConpty: boolean;
 	wordSeparators: string;
-	titleMode: 'executable' | 'sequence';
 	enableFileLinks: boolean;
 	unicodeVersion: '6' | '11';
 	experimentalLinkProvider: boolean;
@@ -192,9 +220,15 @@ export interface ITerminalConfiguration {
 		showActiveTerminal: 'always' | 'singleTerminal' | 'singleTerminalOrNarrow' | 'singleGroup' | 'never';
 		location: 'left' | 'right';
 		focusMode: 'singleClick' | 'doubleClick';
+		title: string;
+		description: string;
+		separator: string;
 	},
 	bellDuration: number;
-	defaultLocation: TerminalLocation;
+	defaultLocation: TerminalLocationString;
+	customGlyphs: boolean;
+	persistentSessionReviveProcess: 'onExit' | 'onExitAndWindowClose' | 'never';
+	ignoreProcessNames: string[];
 }
 
 export const DEFAULT_LOCAL_ECHO_EXCLUDE: ReadonlyArray<string> = ['vim', 'vi', 'nano', 'tmux'];
@@ -227,6 +261,7 @@ export interface IRemoteTerminalAttachTarget {
 	isOrphan: boolean;
 	icon: URI | { light: URI; dark: URI } | { id: string, color?: { id: string } } | undefined;
 	color: string | undefined;
+	fixedDimensions: IFixedTerminalDimensions | undefined;
 }
 
 export interface ICommandTracker {
@@ -277,28 +312,27 @@ export interface ITerminalProcessManager extends IDisposable {
 	readonly onProcessReady: Event<IProcessReadyEvent>;
 	readonly onBeforeProcessData: Event<IBeforeProcessDataEvent>;
 	readonly onProcessData: Event<IProcessDataEvent>;
-	readonly onProcessTitle: Event<string>;
-	readonly onProcessShellTypeChanged: Event<TerminalShellType>;
-	readonly onProcessExit: Event<number | undefined>;
-	readonly onProcessOverrideDimensions: Event<ITerminalDimensionsOverride | undefined>;
-	readonly onProcessResolvedShellLaunchConfig: Event<IShellLaunchConfig>;
-	readonly onProcessDidChangeHasChildProcesses: Event<boolean>;
 	readonly onEnvironmentVariableInfoChanged: Event<IEnvironmentVariableInfo>;
+	readonly onDidChangeProperty: Event<IProcessProperty<any>>;
+	readonly onProcessExit: Event<number | undefined>;
 
 	dispose(immediate?: boolean): void;
 	detachFromProcess(): Promise<void>;
 	createProcess(shellLaunchConfig: IShellLaunchConfig, cols: number, rows: number, isScreenReaderModeEnabled: boolean): Promise<ITerminalLaunchError | undefined>;
 	relaunch(shellLaunchConfig: IShellLaunchConfig, cols: number, rows: number, isScreenReaderModeEnabled: boolean, reset: boolean): Promise<ITerminalLaunchError | undefined>;
-	write(data: string): void;
+	write(data: string): Promise<void>;
 	setDimensions(cols: number, rows: number): Promise<void>;
 	setDimensions(cols: number, rows: number, sync: false): Promise<void>;
 	setDimensions(cols: number, rows: number, sync: true): void;
+	setUnicodeVersion(version: '6' | '11'): Promise<void>;
 	acknowledgeDataEvent(charCount: number): void;
 	processBinary(data: string): void;
 
 	getInitialCwd(): Promise<string>;
 	getCwd(): Promise<string>;
 	getLatency(): Promise<number>;
+	refreshProperty(property: ProcessPropertyType): any;
+	updateProperty(property: ProcessPropertyType, value: any): any;
 }
 
 export const enum ProcessState {
@@ -324,14 +358,10 @@ export interface ITerminalProcessExtHostProxy extends IDisposable {
 	readonly instanceId: number;
 
 	emitData(data: string): void;
-	emitTitle(title: string): void;
+	emitProcessProperty(property: IProcessProperty<any>): void;
 	emitReady(pid: number, cwd: string): void;
-	emitExit(exitCode: number | undefined): void;
-	emitOverrideDimensions(dimensions: ITerminalDimensions | undefined): void;
-	emitResolvedShellLaunchConfig(shellLaunchConfig: IShellLaunchConfig): void;
-	emitInitialCwd(initialCwd: string): void;
-	emitCwd(cwd: string): void;
 	emitLatency(latency: number): void;
+	emitExit(exitCode: number | undefined): void;
 
 	onInput: Event<string>;
 	onBinary: Event<string>;
@@ -395,6 +425,8 @@ export const enum TerminalCommandId {
 	ResizePaneRight = 'workbench.action.terminal.resizePaneRight',
 	ResizePaneUp = 'workbench.action.terminal.resizePaneUp',
 	CreateWithProfileButton = 'workbench.action.terminal.createProfileButton',
+	SizeToContentWidth = 'workbench.action.terminal.sizeToContentWidth',
+	SizeToContentWidthInstance = 'workbench.action.terminal.sizeToContentWidthInstance',
 	ResizePaneDown = 'workbench.action.terminal.resizePaneDown',
 	Focus = 'workbench.action.terminal.focus',
 	FocusNext = 'workbench.action.terminal.focusNext',
@@ -414,10 +446,13 @@ export const enum TerminalCommandId {
 	Clear = 'workbench.action.terminal.clear',
 	ClearSelection = 'workbench.action.terminal.clearSelection',
 	ChangeIcon = 'workbench.action.terminal.changeIcon',
+	ChangeIconPanel = 'workbench.action.terminal.changeIconPanel',
 	ChangeIconInstance = 'workbench.action.terminal.changeIconInstance',
 	ChangeColor = 'workbench.action.terminal.changeColor',
+	ChangeColorPanel = 'workbench.action.terminal.changeColorPanel',
 	ChangeColorInstance = 'workbench.action.terminal.changeColorInstance',
 	Rename = 'workbench.action.terminal.rename',
+	RenamePanel = 'workbench.action.terminal.renamePanel',
 	RenameInstance = 'workbench.action.terminal.renameInstance',
 	RenameWithArgs = 'workbench.action.terminal.renameWithArg',
 	FindFocus = 'workbench.action.terminal.focusFind',
@@ -444,6 +479,7 @@ export const enum TerminalCommandId {
 	MoveToEditor = 'workbench.action.terminal.moveToEditor',
 	MoveToEditorInstance = 'workbench.action.terminal.moveToEditorInstance',
 	MoveToTerminalPanel = 'workbench.action.terminal.moveToTerminalPanel',
+	SetDimensions = 'workbench.action.terminal.setDimensions',
 }
 
 export const DEFAULT_COMMANDS_TO_SKIP_SHELL: string[] = [
@@ -465,6 +501,7 @@ export const DEFAULT_COMMANDS_TO_SKIP_SHELL: string[] = [
 	TerminalCommandId.FocusPreviousPane,
 	TerminalCommandId.FocusPrevious,
 	TerminalCommandId.Focus,
+	TerminalCommandId.SizeToContentWidth,
 	TerminalCommandId.Kill,
 	TerminalCommandId.KillEditor,
 	TerminalCommandId.MoveToEditor,
@@ -502,6 +539,8 @@ export const DEFAULT_COMMANDS_TO_SKIP_SHELL: string[] = [
 	TerminalCommandId.NavigationModeFocusNext,
 	TerminalCommandId.NavigationModeFocusPrevious,
 	'editor.action.toggleTabFocusMode',
+	'notifications.hideList',
+	'notifications.hideToasts',
 	'workbench.action.quickOpen',
 	'workbench.action.quickOpenPreviousEditor',
 	'workbench.action.showCommands',
@@ -594,8 +633,23 @@ export const terminalContributionsDescriptor: IExtensionPointDescriptor = {
 							type: 'string',
 						},
 						icon: {
-							description: nls.localize('vscode.extension.contributes.terminal.types.icon', "A codicon to associate with this terminal type."),
-							type: 'string',
+							description: nls.localize('vscode.extension.contributes.terminal.types.icon', "A codicon, URI, or light and dark URIs to associate with this terminal type."),
+							anyOf: [{
+								type: 'string',
+							},
+							{
+								type: 'object',
+								properties: {
+									light: {
+										description: nls.localize('vscode.extension.contributes.terminal.types.icon.light', 'Icon path when a light theme is used'),
+										type: 'string'
+									},
+									dark: {
+										description: nls.localize('vscode.extension.contributes.terminal.types.icon.dark', 'Icon path when a dark theme is used'),
+										type: 'string'
+									}
+								}
+							}]
 						},
 					},
 				},
@@ -622,8 +676,23 @@ export const terminalContributionsDescriptor: IExtensionPointDescriptor = {
 							type: 'string',
 						},
 						icon: {
-							description: nls.localize('vscode.extension.contributes.terminal.profiles.icon', "A codicon to associate with this terminal profile."),
-							type: 'string',
+							description: nls.localize('vscode.extension.contributes.terminal.types.icon', "A codicon, URI, or light and dark URIs to associate with this terminal type."),
+							anyOf: [{
+								type: 'string',
+							},
+							{
+								type: 'object',
+								properties: {
+									light: {
+										description: nls.localize('vscode.extension.contributes.terminal.types.icon.light', 'Icon path when a light theme is used'),
+										type: 'string'
+									},
+									dark: {
+										description: nls.localize('vscode.extension.contributes.terminal.types.icon.dark', 'Icon path when a dark theme is used'),
+										type: 'string'
+									}
+								}
+							}]
 						},
 					},
 				},

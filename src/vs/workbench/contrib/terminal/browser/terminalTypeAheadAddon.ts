@@ -4,14 +4,14 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { disposableTimeout } from 'vs/base/common/async';
-import { Color } from 'vs/base/common/color';
+import { Color, RGBA } from 'vs/base/common/color';
 import { debounce } from 'vs/base/common/decorators';
 import { Emitter } from 'vs/base/common/event';
 import { Disposable, toDisposable } from 'vs/base/common/lifecycle';
 import { escapeRegExpCharacters } from 'vs/base/common/strings';
 import { ITelemetryService } from 'vs/platform/telemetry/common/telemetry';
 import { TerminalConfigHelper } from 'vs/workbench/contrib/terminal/browser/terminalConfigHelper';
-import { XTermAttributes, XTermCore } from 'vs/workbench/contrib/terminal/browser/xterm-private';
+import { XtermAttributes, IXtermCore } from 'vs/workbench/contrib/terminal/browser/xterm-private';
 import { DEFAULT_LOCAL_ECHO_EXCLUDE, IBeforeProcessDataEvent, ITerminalConfiguration, ITerminalProcessManager } from 'vs/workbench/contrib/terminal/common/terminal';
 import type { IBuffer, IBufferCell, IDisposable, ITerminalAddon, Terminal } from 'xterm';
 
@@ -44,7 +44,7 @@ const statsToggleOffThreshold = 0.5; // if latency is less than `threshold * thi
  */
 const PREDICTION_OMIT_RE = /^(\x1b\[(\??25[hl]|\??[0-9;]+n))+/;
 
-const core = (terminal: Terminal): XTermCore => (terminal as any)._core;
+const core = (terminal: Terminal): IXtermCore => (terminal as any)._core;
 const flushOutput = (terminal: Terminal) => {
 	// TODO: Flushing output is not possible anymore without async
 };
@@ -1032,7 +1032,7 @@ export class PredictionTimeline {
 /**
  * Gets the escape sequence args to restore state/appearence in the cell.
  */
-const attributesToArgs = (cell: XTermAttributes) => {
+const attributesToArgs = (cell: XtermAttributes) => {
 	if (cell.isAttributeDefault()) { return [0]; }
 
 	const args = [];
@@ -1058,7 +1058,7 @@ const attributesToArgs = (cell: XTermAttributes) => {
 /**
  * Gets the escape sequence to restore state/appearence in the cell.
  */
-const attributesToSeq = (cell: XTermAttributes) => `${CSI}${attributesToArgs(cell).join(';')}m`;
+const attributesToSeq = (cell: XtermAttributes) => `${CSI}${attributesToArgs(cell).join(';')}m`;
 
 const arrayHasPrefixAt = <T>(a: ReadonlyArray<T>, ai: number, b: ReadonlyArray<T>) => {
 	if (a.length - ai > b.length) {
@@ -1254,7 +1254,14 @@ class TypeAheadStyle implements IDisposable {
 			case 'inverted':
 				return { applyArgs: [7], undoArgs: [27] };
 			default:
-				const { r, g, b } = Color.fromHex(style).rgba;
+				let color: Color;
+				try {
+					color = Color.fromHex(style);
+				} catch {
+					color = new Color(new RGBA(255, 0, 0, 1));
+				}
+
+				const { r, g, b } = color.rgba;
 				return { applyArgs: [38, 2, r, g, b], undoArgs: [39] };
 		}
 	}

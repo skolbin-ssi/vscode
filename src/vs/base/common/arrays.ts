@@ -219,7 +219,7 @@ export function delta<T>(before: ReadonlyArray<T>, after: ReadonlyArray<T>, comp
  * @param array The unsorted array.
  * @param compare A sort function for the elements.
  * @param n The number of elements to return.
- * @return The first n elemnts from array when sorted with compare.
+ * @return The first n elements from array when sorted with compare.
  */
 export function top<T>(array: ReadonlyArray<T>, compare: (a: T, b: T) => number, n: number): T[] {
 	if (n === 0) {
@@ -241,7 +241,7 @@ export function top<T>(array: ReadonlyArray<T>, compare: (a: T, b: T) => number,
  * @param compare A sort function for the elements.
  * @param n The number of elements to return.
  * @param batch The number of elements to examine before yielding to the event loop.
- * @return The first n elemnts from array when sorted with compare.
+ * @return The first n elements from array when sorted with compare.
  */
 export function topAsync<T>(array: T[], compare: (a: T, b: T) => number, n: number, batch: number, token?: CancellationToken): Promise<T[]> {
 	if (n === 0) {
@@ -286,7 +286,7 @@ export function coalesce<T>(array: ReadonlyArray<T | undefined | null>): T[] {
 }
 
 /**
- * Remove all falsey values from `array`. The original array IS modified.
+ * Remove all falsy values from `array`. The original array IS modified.
  */
 export function coalesceInPlace<T>(array: Array<T | undefined | null>): void {
 	let to = 0;
@@ -324,36 +324,17 @@ export function isNonEmptyArray<T>(obj: T[] | readonly T[] | undefined | null): 
 
 /**
  * Removes duplicates from the given array. The optional keyFn allows to specify
- * how elements are checked for equalness by returning a unique string for each.
+ * how elements are checked for equality by returning an alternate value for each.
  */
-export function distinct<T>(array: ReadonlyArray<T>, keyFn?: (t: T) => string): T[] {
-	if (!keyFn) {
-		return array.filter((element, position) => {
-			return array.indexOf(element) === position;
-		});
-	}
+export function distinct<T>(array: ReadonlyArray<T>, keyFn: (value: T) => any = value => value): T[] {
+	const seen = new Set<any>();
 
-	const seen: { [key: string]: boolean; } = Object.create(null);
-	return array.filter((elem) => {
-		const key = keyFn(elem);
-		if (seen[key]) {
-			return false;
-		}
-
-		seen[key] = true;
-
-		return true;
-	});
-}
-
-export function distinctES6<T>(array: ReadonlyArray<T>): T[] {
-	const seen = new Set<T>();
 	return array.filter(element => {
-		if (seen.has(element)) {
+		const key = keyFn!(element);
+		if (seen.has(key)) {
 			return false;
 		}
-
-		seen.add(element);
+		seen.add(key);
 		return true;
 	});
 }
@@ -371,6 +352,14 @@ export function uniqueFilter<T>(keyFn: (t: T) => string): (t: T) => boolean {
 		seen[key] = true;
 		return true;
 	};
+}
+
+export function findLast<T>(arr: readonly T[], predicate: (item: T) => boolean): T | undefined {
+	const idx = lastIndex(arr, predicate);
+	if (idx === -1) {
+		return undefined;
+	}
+	return arr[idx];
 }
 
 export function lastIndex<T>(array: ReadonlyArray<T>, fn: (item: T) => boolean): number {
@@ -682,5 +671,9 @@ export class ArrayQueue<T> {
 		const result = endIdx === this.lastIdx ? null : this.items.slice(endIdx + 1, this.lastIdx + 1);
 		this.lastIdx = endIdx;
 		return result;
+	}
+
+	peek(): T | undefined {
+		return this.items[this.firstIdx];
 	}
 }

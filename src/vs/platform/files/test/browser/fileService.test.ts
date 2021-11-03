@@ -4,15 +4,15 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as assert from 'assert';
-import { FileService } from 'vs/platform/files/common/fileService';
-import { URI } from 'vs/base/common/uri';
-import { IFileSystemProviderRegistrationEvent, FileSystemProviderCapabilities, IFileSystemProviderCapabilitiesChangeEvent, FileOpenOptions, FileReadStreamOptions, IStat, FileType, IFileChange, FileChangeType } from 'vs/platform/files/common/files';
-import { IDisposable, toDisposable } from 'vs/base/common/lifecycle';
-import { NullLogService } from 'vs/platform/log/common/log';
 import { timeout } from 'vs/base/common/async';
-import { NullFileSystemProvider } from 'vs/platform/files/test/common/nullFileSystemProvider';
-import { consumeStream, newWriteableStream, ReadableStreamEvents } from 'vs/base/common/stream';
 import { CancellationToken } from 'vs/base/common/cancellation';
+import { IDisposable, toDisposable } from 'vs/base/common/lifecycle';
+import { consumeStream, newWriteableStream, ReadableStreamEvents } from 'vs/base/common/stream';
+import { URI } from 'vs/base/common/uri';
+import { FileChangeType, FileOpenOptions, FileReadStreamOptions, FileSystemProviderCapabilities, FileType, IFileChange, IFileSystemProviderCapabilitiesChangeEvent, IFileSystemProviderRegistrationEvent, IStat } from 'vs/platform/files/common/files';
+import { FileService } from 'vs/platform/files/common/fileService';
+import { NullFileSystemProvider } from 'vs/platform/files/test/common/nullFileSystemProvider';
+import { NullLogService } from 'vs/platform/log/common/log';
 
 suite('File Service', () => {
 
@@ -21,7 +21,8 @@ suite('File Service', () => {
 		const resource = URI.parse('test://foo/bar');
 		const provider = new NullFileSystemProvider();
 
-		assert.strictEqual(service.canHandleResource(resource), false);
+		assert.strictEqual(await service.canHandleResource(resource), false);
+		assert.strictEqual(service.hasProvider(resource), false);
 		assert.strictEqual(service.getProvider(resource.scheme), undefined);
 
 		const registrations: IFileSystemProviderRegistrationEvent[] = [];
@@ -48,9 +49,8 @@ suite('File Service', () => {
 			}
 		});
 
-		await service.activateProvider('test');
-
-		assert.strictEqual(service.canHandleResource(resource), true);
+		assert.strictEqual(await service.canHandleResource(resource), true);
+		assert.strictEqual(service.hasProvider(resource), true);
 		assert.strictEqual(service.getProvider(resource.scheme), provider);
 
 		assert.strictEqual(registrations.length, 1);
@@ -73,7 +73,8 @@ suite('File Service', () => {
 
 		registrationDisposable!.dispose();
 
-		assert.strictEqual(service.canHandleResource(resource), false);
+		assert.strictEqual(await service.canHandleResource(resource), false);
+		assert.strictEqual(service.hasProvider(resource), false);
 
 		assert.strictEqual(registrations.length, 2);
 		assert.strictEqual(registrations[1].scheme, 'test');

@@ -181,13 +181,22 @@ const apiMenus: IAPIMenu[] = [
 	{
 		key: 'notebook/toolbar',
 		id: MenuId.NotebookToolbar,
-		description: localize('notebook.toolbar', "The contributed notebook toolbar menu"),
-		proposed: true
+		description: localize('notebook.toolbar', "The contributed notebook toolbar menu")
 	},
 	{
 		key: 'notebook/cell/title',
 		id: MenuId.NotebookCellTitle,
-		description: localize('notebook.cell.title', "The contributed notebook cell title menu"),
+		description: localize('notebook.cell.title', "The contributed notebook cell title menu")
+	},
+	{
+		key: 'notebook/cell/execute',
+		id: MenuId.NotebookCellExecute,
+		description: localize('notebook.cell.execute', "The contributed notebook cell execution menu")
+	},
+	{
+		key: 'notebook/cell/executePrimary',
+		id: MenuId.NotebookCellExecutePrimary,
+		description: localize('notebook.cell.executePrimary', "The contributed primary notebook cell execution button"),
 		proposed: true
 	},
 	{
@@ -541,11 +550,11 @@ namespace schema {
 				type: 'string'
 			},
 			shortTitle: {
-				description: localize('vscode.extension.contributes.commandType.shortTitle', 'Short title by which the command is represented in the UI'),
+				markdownDescription: localize('vscode.extension.contributes.commandType.shortTitle', '(Optional) Short title by which the command is represented in the UI. Menus pick either `title` or `shortTitle` depending on the context in which they show commands.'),
 				type: 'string'
 			},
 			category: {
-				description: localize('vscode.extension.contributes.commandType.category', '(Optional) Category string by the command is grouped in the UI'),
+				description: localize('vscode.extension.contributes.commandType.category', '(Optional) Category string by which the command is grouped in the UI'),
 				type: 'string'
 			},
 			enablement: {
@@ -623,7 +632,8 @@ commandsExtensionPoint.setHandler(extensions => {
 			id: command,
 			title,
 			source: extension.description.displayName ?? extension.description.name,
-			shortTitle: extension.description.enableProposedApi ? shortTitle : undefined,
+			shortTitle,
+			tooltip: extension.description.enableProposedApi ? title : undefined,
 			category,
 			precondition: ContextKeyExpr.deserialize(enablement),
 			icon: absoluteIcon

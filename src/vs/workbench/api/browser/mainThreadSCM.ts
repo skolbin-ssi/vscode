@@ -14,6 +14,7 @@ import { ISplice, Sequence } from 'vs/base/common/sequence';
 import { CancellationToken } from 'vs/base/common/cancellation';
 import { MarshalledId } from 'vs/base/common/marshalling';
 import { ThemeIcon } from 'vs/platform/theme/common/themeService';
+import { IMarkdownString } from 'vs/base/common/htmlContent';
 
 class MainThreadSCMResourceGroup implements ISCMResourceGroup {
 
@@ -119,6 +120,7 @@ class MainThreadSCMProvider implements ISCMProvider {
 
 	get commitTemplate(): string { return this.features.commitTemplate || ''; }
 	get acceptInputCommand(): Command | undefined { return this.features.acceptInputCommand; }
+	get actionButton(): Command | undefined { return this.features.actionButton ?? undefined; }
 	get statusBarCommands(): Command[] | undefined { return this.features.statusBarCommands; }
 	get count(): number | undefined { return this.features.count; }
 
@@ -438,7 +440,7 @@ export class MainThreadSCM implements MainThreadSCMShape {
 		repository.input.setFocus();
 	}
 
-	$showValidationMessage(sourceControlHandle: number, message: string, type: InputValidationType) {
+	$showValidationMessage(sourceControlHandle: number, message: string | IMarkdownString, type: InputValidationType) {
 		const repository = this._repositories.get(sourceControlHandle);
 		if (!repository) {
 			return;

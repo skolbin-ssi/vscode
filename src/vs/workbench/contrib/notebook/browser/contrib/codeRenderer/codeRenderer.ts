@@ -9,12 +9,14 @@ import { CodeEditorWidget } from 'vs/editor/browser/widget/codeEditorWidget';
 import { IModelService } from 'vs/editor/common/services/modelService';
 import { IModeService } from 'vs/editor/common/services/modeService';
 import { IInstantiationService } from 'vs/platform/instantiation/common/instantiation';
-import { RenderOutputType, ICommonNotebookEditor, ICellOutputViewModel, IRenderOutput, IOutputTransformContribution } from 'vs/workbench/contrib/notebook/browser/notebookBrowser';
+import { RenderOutputType, ICellOutputViewModel, IRenderOutput } from 'vs/workbench/contrib/notebook/browser/notebookBrowser';
 import { OutputRendererRegistry } from 'vs/workbench/contrib/notebook/browser/view/output/rendererRegistry';
 import { IOutputItemDto } from 'vs/workbench/contrib/notebook/common/notebookCommon';
 import { Registry } from 'vs/platform/registry/common/platform';
 import { Extensions as WorkbenchExtensions, IWorkbenchContributionsRegistry } from 'vs/workbench/common/contributions';
 import { LifecyclePhase } from 'vs/workbench/services/lifecycle/common/lifecycle';
+import { CodeCellViewModel } from 'vs/workbench/contrib/notebook/browser/viewModel/codeCellViewModel';
+import { INotebookDelegateForOutput, IOutputTransformContribution } from 'vs/workbench/contrib/notebook/browser/view/notebookRenderingCommon';
 
 abstract class CodeRendererContrib extends Disposable implements IOutputTransformContribution {
 	getType() {
@@ -24,7 +26,7 @@ abstract class CodeRendererContrib extends Disposable implements IOutputTransfor
 	abstract getMimetypes(): string[];
 
 	constructor(
-		public notebookEditor: ICommonNotebookEditor,
+		public notebookEditor: INotebookDelegateForOutput,
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
 		@IModelService private readonly modelService: IModelService,
 		@IModeService private readonly modeService: IModeService,
@@ -34,11 +36,31 @@ abstract class CodeRendererContrib extends Disposable implements IOutputTransfor
 
 	abstract render(output: ICellOutputViewModel, item: IOutputItemDto, container: HTMLElement): IRenderOutput;
 
-	protected _render(output: ICellOutputViewModel, container: HTMLElement, value: string, modeId: string): IRenderOutput {
+	protected _render(output: ICellOutputViewModel, container: HTMLElement, value: string, languageId: string): IRenderOutput {
 		const disposable = new DisposableStore();
 		const editor = this.instantiationService.createInstance(CodeEditorWidget, container, getOutputSimpleEditorOptions(), { isSimpleWidget: true, contributions: this.notebookEditor.creationOptions.cellEditorContributions });
 
-		const mode = this.modeService.create(modeId);
+		if (output.cellViewModel instanceof CodeCellViewModel) {
+			disposable.add(output.cellViewModel.viewContext.eventDispatcher.onDidChangeLayout(() => {
+				const outputWidth = this.notebookEditor.getCellOutputLayoutInfo(output.cellViewModel).width;
+				const fontInfo = this.notebookEditor.getCellOutputLayoutInfo(output.cellViewModel).fontInfo;
+				const editorHeight = Math.min(16 * (fontInfo.lineHeight || 18), editor.getLayoutInfo().height);
+
+				editor.layout({ height: editorHeight, width: outputWidth });
+				container.style.height = `${editorHeight + 8}px`;
+			}));
+		}
+
+		disposable.add(editor.onDidContentSizeChange(e => {
+			const outputWidth = this.notebookEditor.getCellOutputLayoutInfo(output.cellViewModel).width;
+			const fontInfo = this.notebookEditor.getCellOutputLayoutInfo(output.cellViewModel).fontInfo;
+			const editorHeight = Math.min(16 * (fontInfo.lineHeight || 18), e.contentHeight);
+
+			editor.layout({ height: editorHeight, width: outputWidth });
+			container.style.height = `${editorHeight + 8}px`;
+		}));
+
+		const mode = this.modeService.create(languageId);
 		const textModel = this.modelService.createModel(value, mode, undefined, false);
 		editor.setModel(textModel);
 
@@ -74,7 +96,7 @@ export class NotebookCodeRendererContribution extends Disposable {
 				}
 
 				render(output: ICellOutputViewModel, item: IOutputItemDto, container: HTMLElement): IRenderOutput {
-					const str = getStringValue(item);
+					const str = item.data.toString();
 					return this._render(output, container, str, languageId);
 				}
 			});
@@ -86,9 +108,8 @@ export class NotebookCodeRendererContribution extends Disposable {
 			registerCodeRendererContrib(`text/x-${id}`, id);
 		});
 
-		this._register(_modeService.onDidCreateMode((e) => {
-			const id = e.getId();
-			registerCodeRendererContrib(`text/x-${id}`, id);
+		this._register(_modeService.onDidEncounterLanguage((languageId) => {
+			registerCodeRendererContrib(`text/x-${languageId}`, languageId);
 		}));
 
 		registerCodeRendererContrib('application/json', 'json');
@@ -100,10 +121,6 @@ workbenchContributionsRegistry.registerWorkbenchContribution(NotebookCodeRendere
 
 
 // --- utils ---
-function getStringValue(item: IOutputItemDto): string {
-	// todo@jrieken NOT proper, should be VSBuffer
-	return new TextDecoder().decode(item.data);
-}
 
 function getOutputSimpleEditorOptions(): IEditorConstructionOptions {
 	return {

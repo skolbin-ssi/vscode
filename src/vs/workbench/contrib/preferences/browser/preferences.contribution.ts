@@ -6,6 +6,7 @@
 import { KeyChord, KeyCode, KeyMod } from 'vs/base/common/keyCodes';
 import { Disposable } from 'vs/base/common/lifecycle';
 import { Schemas } from 'vs/base/common/network';
+import { isObject } from 'vs/base/common/types';
 import { URI } from 'vs/base/common/uri';
 import 'vs/css!./media/preferences';
 import { registerEditorContribution } from 'vs/editor/browser/editorExtensions';
@@ -34,7 +35,7 @@ import { ConfigureLanguageBasedSettingsAction } from 'vs/workbench/contrib/prefe
 import { SettingsEditorContribution } from 'vs/workbench/contrib/preferences/browser/preferencesEditor';
 import { preferencesOpenSettingsIcon } from 'vs/workbench/contrib/preferences/browser/preferencesIcons';
 import { SettingsEditor2, SettingsFocusContext } from 'vs/workbench/contrib/preferences/browser/settingsEditor2';
-import { CONTEXT_KEYBINDINGS_EDITOR, CONTEXT_KEYBINDINGS_SEARCH_FOCUS, CONTEXT_KEYBINDING_FOCUS, CONTEXT_SETTINGS_EDITOR, CONTEXT_SETTINGS_JSON_EDITOR, CONTEXT_SETTINGS_ROW_FOCUS, CONTEXT_SETTINGS_SEARCH_FOCUS, CONTEXT_TOC_ROW_FOCUS, KEYBINDINGS_EDITOR_COMMAND_ADD, KEYBINDINGS_EDITOR_COMMAND_CLEAR_SEARCH_RESULTS, KEYBINDINGS_EDITOR_COMMAND_COPY, KEYBINDINGS_EDITOR_COMMAND_COPY_COMMAND, KEYBINDINGS_EDITOR_COMMAND_DEFINE, KEYBINDINGS_EDITOR_COMMAND_DEFINE_WHEN, KEYBINDINGS_EDITOR_COMMAND_FOCUS_KEYBINDINGS, KEYBINDINGS_EDITOR_COMMAND_RECORD_SEARCH_KEYS, KEYBINDINGS_EDITOR_COMMAND_REMOVE, KEYBINDINGS_EDITOR_COMMAND_RESET, KEYBINDINGS_EDITOR_COMMAND_SEARCH, KEYBINDINGS_EDITOR_COMMAND_SHOW_SIMILAR, KEYBINDINGS_EDITOR_COMMAND_SORTBY_PRECEDENCE, KEYBINDINGS_EDITOR_SHOW_DEFAULT_KEYBINDINGS, KEYBINDINGS_EDITOR_SHOW_EXTENSION_KEYBINDINGS, KEYBINDINGS_EDITOR_SHOW_USER_KEYBINDINGS, MODIFIED_SETTING_TAG, REQUIRE_TRUSTED_WORKSPACE_SETTING_TAG, SETTINGS_EDITOR_COMMAND_CLEAR_SEARCH_RESULTS, SETTINGS_EDITOR_COMMAND_SHOW_CONTEXT_MENU } from 'vs/workbench/contrib/preferences/common/preferences';
+import { CONTEXT_KEYBINDINGS_EDITOR, CONTEXT_KEYBINDINGS_SEARCH_FOCUS, CONTEXT_KEYBINDING_FOCUS, CONTEXT_SETTINGS_EDITOR, CONTEXT_SETTINGS_JSON_EDITOR, CONTEXT_SETTINGS_ROW_FOCUS, CONTEXT_SETTINGS_SEARCH_FOCUS, CONTEXT_TOC_ROW_FOCUS, KEYBINDINGS_EDITOR_COMMAND_ADD, KEYBINDINGS_EDITOR_COMMAND_CLEAR_SEARCH_RESULTS, KEYBINDINGS_EDITOR_COMMAND_COPY, KEYBINDINGS_EDITOR_COMMAND_COPY_COMMAND, KEYBINDINGS_EDITOR_COMMAND_COPY_COMMAND_TITLE, KEYBINDINGS_EDITOR_COMMAND_DEFINE, KEYBINDINGS_EDITOR_COMMAND_DEFINE_WHEN, KEYBINDINGS_EDITOR_COMMAND_FOCUS_KEYBINDINGS, KEYBINDINGS_EDITOR_COMMAND_RECORD_SEARCH_KEYS, KEYBINDINGS_EDITOR_COMMAND_REMOVE, KEYBINDINGS_EDITOR_COMMAND_RESET, KEYBINDINGS_EDITOR_COMMAND_SEARCH, KEYBINDINGS_EDITOR_COMMAND_SHOW_SIMILAR, KEYBINDINGS_EDITOR_COMMAND_SORTBY_PRECEDENCE, KEYBINDINGS_EDITOR_SHOW_DEFAULT_KEYBINDINGS, KEYBINDINGS_EDITOR_SHOW_EXTENSION_KEYBINDINGS, KEYBINDINGS_EDITOR_SHOW_USER_KEYBINDINGS, MODIFIED_SETTING_TAG, REQUIRE_TRUSTED_WORKSPACE_SETTING_TAG, SETTINGS_EDITOR_COMMAND_CLEAR_SEARCH_RESULTS, SETTINGS_EDITOR_COMMAND_SHOW_CONTEXT_MENU } from 'vs/workbench/contrib/preferences/common/preferences';
 import { PreferencesContribution } from 'vs/workbench/contrib/preferences/common/preferencesContribution';
 import { IEditorService } from 'vs/workbench/services/editor/common/editorService';
 import { IWorkbenchEnvironmentService } from 'vs/workbench/services/environment/common/environmentService';
@@ -120,6 +121,22 @@ const OPEN_SETTINGS2_ACTION_TITLE = { value: nls.localize('openSettings2', "Open
 
 const category = { value: nls.localize('preferences', "Preferences"), original: 'Preferences' };
 
+interface IOpenSettingsActionOptions {
+	openToSide?: boolean;
+	query?: string;
+}
+
+function sanitizeOpenSettingsArgs(args: any): IOpenSettingsActionOptions {
+	if (!isObject(args)) {
+		args = {};
+	}
+
+	return {
+		openToSide: args.openToSide,
+		query: args.query
+	};
+}
+
 class PreferencesActionsContribution extends Disposable implements IWorkbenchContribution {
 
 	constructor(
@@ -149,7 +166,7 @@ class PreferencesActionsContribution extends Disposable implements IWorkbenchCon
 					keybinding: {
 						weight: KeybindingWeight.WorkbenchContrib,
 						when: null,
-						primary: KeyMod.CtrlCmd | KeyCode.US_COMMA,
+						primary: KeyMod.CtrlCmd | KeyCode.Comma,
 					},
 					menu: {
 						id: MenuId.GlobalActivity,
@@ -158,9 +175,10 @@ class PreferencesActionsContribution extends Disposable implements IWorkbenchCon
 					}
 				});
 			}
-			run(accessor: ServicesAccessor, args: string | undefined) {
-				const query = typeof args === 'string' ? args : undefined;
-				return accessor.get(IPreferencesService).openSettings(query ? false : undefined, query);
+			run(accessor: ServicesAccessor, args: string | IOpenSettingsActionOptions) {
+				// args takes a string for backcompat
+				const opts = typeof args === 'string' ? { query: args } : sanitizeOpenSettingsArgs(args);
+				return accessor.get(IPreferencesService).openSettings(opts);
 			}
 		});
 		MenuRegistry.appendMenuItem(MenuId.MenubarPreferencesMenu, {
@@ -180,8 +198,9 @@ class PreferencesActionsContribution extends Disposable implements IWorkbenchCon
 					f1: true,
 				});
 			}
-			run(accessor: ServicesAccessor) {
-				return accessor.get(IPreferencesService).openSettings(false, undefined);
+			run(accessor: ServicesAccessor, args: IOpenSettingsActionOptions) {
+				args = sanitizeOpenSettingsArgs(args);
+				return accessor.get(IPreferencesService).openSettings({ jsonEditor: false, ...args });
 			}
 		});
 		registerAction2(class extends Action2 {
@@ -193,8 +212,9 @@ class PreferencesActionsContribution extends Disposable implements IWorkbenchCon
 					f1: true,
 				});
 			}
-			run(accessor: ServicesAccessor) {
-				return accessor.get(IPreferencesService).openSettings(true, undefined);
+			run(accessor: ServicesAccessor, args: IOpenSettingsActionOptions) {
+				args = sanitizeOpenSettingsArgs(args);
+				return accessor.get(IPreferencesService).openSettings({ jsonEditor: true, ...args });
 			}
 		});
 		registerAction2(class extends Action2 {
@@ -206,8 +226,9 @@ class PreferencesActionsContribution extends Disposable implements IWorkbenchCon
 					f1: true,
 				});
 			}
-			run(accessor: ServicesAccessor) {
-				return accessor.get(IPreferencesService).openGlobalSettings();
+			run(accessor: ServicesAccessor, args: IOpenSettingsActionOptions) {
+				args = sanitizeOpenSettingsArgs(args);
+				return accessor.get(IPreferencesService).openUserSettings(args);
 			}
 		});
 		registerAction2(class extends Action2 {
@@ -237,8 +258,9 @@ class PreferencesActionsContribution extends Disposable implements IWorkbenchCon
 					}]
 				});
 			}
-			run(accessor: ServicesAccessor) {
-				return accessor.get(IPreferencesService).openGlobalSettings(false);
+			run(accessor: ServicesAccessor, args: IOpenSettingsActionOptions) {
+				args = sanitizeOpenSettingsArgs(args);
+				return accessor.get(IPreferencesService).openUserSettings({ jsonEditor: false, ...args });
 			}
 		});
 		registerAction2(class extends Action2 {
@@ -260,7 +282,7 @@ class PreferencesActionsContribution extends Disposable implements IWorkbenchCon
 				if (editorPane instanceof SettingsEditor2) {
 					return editorPane.switchToSettingsFile();
 				}
-				return Promise.resolve(null);
+				return null;
 			}
 		});
 		registerAction2(class extends Action2 {
@@ -288,8 +310,9 @@ class PreferencesActionsContribution extends Disposable implements IWorkbenchCon
 					}
 				});
 			}
-			run(accessor: ServicesAccessor) {
-				return accessor.get(IPreferencesService).openWorkspaceSettings();
+			run(accessor: ServicesAccessor, args?: IOpenSettingsActionOptions) {
+				args = sanitizeOpenSettingsArgs(args);
+				return accessor.get(IPreferencesService).openWorkspaceSettings(args);
 			}
 		});
 		registerAction2(class extends Action2 {
@@ -304,8 +327,9 @@ class PreferencesActionsContribution extends Disposable implements IWorkbenchCon
 					}
 				});
 			}
-			run(accessor: ServicesAccessor) {
-				return accessor.get(IPreferencesService).openWorkspaceSettings(true);
+			run(accessor: ServicesAccessor, args?: IOpenSettingsActionOptions) {
+				args = sanitizeOpenSettingsArgs(args);
+				return accessor.get(IPreferencesService).openWorkspaceSettings({ jsonEditor: true, ...args });
 			}
 		});
 		registerAction2(class extends Action2 {
@@ -320,12 +344,13 @@ class PreferencesActionsContribution extends Disposable implements IWorkbenchCon
 					}
 				});
 			}
-			async run(accessor: ServicesAccessor) {
+			async run(accessor: ServicesAccessor, args?: IOpenSettingsActionOptions) {
 				const commandService = accessor.get(ICommandService);
 				const preferencesService = accessor.get(IPreferencesService);
 				const workspaceFolder = await commandService.executeCommand<IWorkspaceFolder>(PICK_WORKSPACE_FOLDER_COMMAND_ID);
 				if (workspaceFolder) {
-					await preferencesService.openFolderSettings(workspaceFolder.uri);
+					args = sanitizeOpenSettingsArgs(args);
+					await preferencesService.openFolderSettings({ folderUri: workspaceFolder.uri, ...args });
 				}
 			}
 		});
@@ -341,12 +366,13 @@ class PreferencesActionsContribution extends Disposable implements IWorkbenchCon
 					}
 				});
 			}
-			async run(accessor: ServicesAccessor) {
+			async run(accessor: ServicesAccessor, args?: IOpenSettingsActionOptions) {
 				const commandService = accessor.get(ICommandService);
 				const preferencesService = accessor.get(IPreferencesService);
 				const workspaceFolder = await commandService.executeCommand<IWorkspaceFolder>(PICK_WORKSPACE_FOLDER_COMMAND_ID);
 				if (workspaceFolder) {
-					await preferencesService.openFolderSettings(workspaceFolder.uri, true);
+					args = sanitizeOpenSettingsArgs(args);
+					await preferencesService.openFolderSettings({ folderUri: workspaceFolder.uri, jsonEditor: true, ...args });
 				}
 			}
 		});
@@ -365,7 +391,7 @@ class PreferencesActionsContribution extends Disposable implements IWorkbenchCon
 				});
 			}
 			run(accessor: ServicesAccessor, resource: URI) {
-				return accessor.get(IPreferencesService).openFolderSettings(resource);
+				return accessor.get(IPreferencesService).openFolderSettings({ folderUri: resource });
 			}
 		});
 		registerAction2(class extends Action2 {
@@ -406,7 +432,7 @@ class PreferencesActionsContribution extends Disposable implements IWorkbenchCon
 				if (editorPane instanceof SettingsEditor2) {
 					editorPane.focusSearch(`@tag:usesOnlineServices`);
 				} else {
-					accessor.get(IPreferencesService).openSettings(false, '@tag:usesOnlineServices');
+					accessor.get(IPreferencesService).openSettings({ jsonEditor: false, query: '@tag:usesOnlineServices' });
 				}
 			}
 		});
@@ -444,7 +470,7 @@ class PreferencesActionsContribution extends Disposable implements IWorkbenchCon
 				if (editorPane instanceof SettingsEditor2) {
 					editorPane.focusSearch('@tag:telemetry');
 				} else {
-					accessor.get(IPreferencesService).openSettings(false, '@tag:telemetry');
+					accessor.get(IPreferencesService).openSettings({ jsonEditor: false, query: '@tag:telemetry' });
 				}
 			}
 		});
@@ -457,7 +483,7 @@ class PreferencesActionsContribution extends Disposable implements IWorkbenchCon
 				});
 			}
 			run(accessor: ServicesAccessor) {
-				accessor.get(IPreferencesService).openWorkspaceSettings(false, { query: `@tag:${REQUIRE_TRUSTED_WORKSPACE_SETTING_TAG}` });
+				accessor.get(IPreferencesService).openWorkspaceSettings({ jsonEditor: false, query: `@tag:${REQUIRE_TRUSTED_WORKSPACE_SETTING_TAG}` });
 			}
 		});
 
@@ -480,8 +506,27 @@ class PreferencesActionsContribution extends Disposable implements IWorkbenchCon
 							}
 						});
 					}
-					run(accessor: ServicesAccessor) {
-						return accessor.get(IPreferencesService).openRemoteSettings();
+					run(accessor: ServicesAccessor, args?: IOpenSettingsActionOptions) {
+						args = sanitizeOpenSettingsArgs(args);
+						return accessor.get(IPreferencesService).openRemoteSettings(args);
+					}
+				});
+				const jsonLabel = nls.localize('openRemoteSettingsJSON', "Open Remote Settings (JSON) ({0})", hostLabel);
+				registerAction2(class extends Action2 {
+					constructor() {
+						super({
+							id: 'workbench.action.openRemoteSettingsFile',
+							title: { value: jsonLabel, original: `Open Remote Settings (JSON) (${hostLabel})` },
+							category,
+							menu: {
+								id: MenuId.CommandPalette,
+								when: RemoteNameContext.notEqualsTo('')
+							}
+						});
+					}
+					run(accessor: ServicesAccessor, args?: IOpenSettingsActionOptions) {
+						args = sanitizeOpenSettingsArgs(args);
+						return accessor.get(IPreferencesService).openRemoteSettings({ jsonEditor: true, ...args });
 					}
 				});
 			});
@@ -509,7 +554,7 @@ class PreferencesActionsContribution extends Disposable implements IWorkbenchCon
 					id: SETTINGS_EDITOR_COMMAND_SEARCH,
 					precondition: CONTEXT_SETTINGS_EDITOR,
 					keybinding: {
-						primary: KeyMod.CtrlCmd | KeyCode.KEY_F,
+						primary: KeyMod.CtrlCmd | KeyCode.KeyF,
 						weight: KeybindingWeight.EditorContrib,
 						when: null
 					},
@@ -730,7 +775,7 @@ class PreferencesActionsContribution extends Disposable implements IWorkbenchCon
 					keybinding: {
 						when: null,
 						weight: KeybindingWeight.WorkbenchContrib,
-						primary: KeyChord(KeyMod.CtrlCmd | KeyCode.KEY_K, KeyMod.CtrlCmd | KeyCode.KEY_S)
+						primary: KeyChord(KeyMod.CtrlCmd | KeyCode.KeyK, KeyMod.CtrlCmd | KeyCode.KeyS)
 					},
 					menu: [
 						{ id: MenuId.CommandPalette },
@@ -902,7 +947,7 @@ class PreferencesActionsContribution extends Disposable implements IWorkbenchCon
 			id: KEYBINDINGS_EDITOR_COMMAND_ADD,
 			weight: KeybindingWeight.WorkbenchContrib,
 			when: ContextKeyExpr.and(CONTEXT_KEYBINDINGS_EDITOR, CONTEXT_KEYBINDING_FOCUS),
-			primary: KeyChord(KeyMod.CtrlCmd | KeyCode.KEY_K, KeyMod.CtrlCmd | KeyCode.KEY_A),
+			primary: KeyChord(KeyMod.CtrlCmd | KeyCode.KeyK, KeyMod.CtrlCmd | KeyCode.KeyA),
 			handler: (accessor, args: any) => {
 				const editorPane = accessor.get(IEditorService).activeEditorPane;
 				if (editorPane instanceof KeybindingsEditor) {
@@ -915,7 +960,7 @@ class PreferencesActionsContribution extends Disposable implements IWorkbenchCon
 			id: KEYBINDINGS_EDITOR_COMMAND_DEFINE_WHEN,
 			weight: KeybindingWeight.WorkbenchContrib,
 			when: ContextKeyExpr.and(CONTEXT_KEYBINDINGS_EDITOR, CONTEXT_KEYBINDING_FOCUS),
-			primary: KeyChord(KeyMod.CtrlCmd | KeyCode.KEY_K, KeyMod.CtrlCmd | KeyCode.KEY_E),
+			primary: KeyChord(KeyMod.CtrlCmd | KeyCode.KeyK, KeyMod.CtrlCmd | KeyCode.KeyE),
 			handler: (accessor, args: any) => {
 				const editorPane = accessor.get(IEditorService).activeEditorPane;
 				if (editorPane instanceof KeybindingsEditor && editorPane.activeKeybindingEntry!.keybindingItem.keybinding) {
@@ -957,7 +1002,7 @@ class PreferencesActionsContribution extends Disposable implements IWorkbenchCon
 			id: KEYBINDINGS_EDITOR_COMMAND_SEARCH,
 			weight: KeybindingWeight.WorkbenchContrib,
 			when: ContextKeyExpr.and(CONTEXT_KEYBINDINGS_EDITOR),
-			primary: KeyMod.CtrlCmd | KeyCode.KEY_F,
+			primary: KeyMod.CtrlCmd | KeyCode.KeyF,
 			handler: (accessor, args: any) => {
 				const editorPane = accessor.get(IEditorService).activeEditorPane;
 				if (editorPane instanceof KeybindingsEditor) {
@@ -970,8 +1015,8 @@ class PreferencesActionsContribution extends Disposable implements IWorkbenchCon
 			id: KEYBINDINGS_EDITOR_COMMAND_RECORD_SEARCH_KEYS,
 			weight: KeybindingWeight.WorkbenchContrib,
 			when: ContextKeyExpr.and(CONTEXT_KEYBINDINGS_EDITOR, CONTEXT_KEYBINDINGS_SEARCH_FOCUS),
-			primary: KeyMod.Alt | KeyCode.KEY_K,
-			mac: { primary: KeyMod.CtrlCmd | KeyMod.Alt | KeyCode.KEY_K },
+			primary: KeyMod.Alt | KeyCode.KeyK,
+			mac: { primary: KeyMod.CtrlCmd | KeyMod.Alt | KeyCode.KeyK },
 			handler: (accessor, args: any) => {
 				const editorPane = accessor.get(IEditorService).activeEditorPane;
 				if (editorPane instanceof KeybindingsEditor) {
@@ -984,8 +1029,8 @@ class PreferencesActionsContribution extends Disposable implements IWorkbenchCon
 			id: KEYBINDINGS_EDITOR_COMMAND_SORTBY_PRECEDENCE,
 			weight: KeybindingWeight.WorkbenchContrib,
 			when: ContextKeyExpr.and(CONTEXT_KEYBINDINGS_EDITOR),
-			primary: KeyMod.Alt | KeyCode.KEY_P,
-			mac: { primary: KeyMod.CtrlCmd | KeyMod.Alt | KeyCode.KEY_P },
+			primary: KeyMod.Alt | KeyCode.KeyP,
+			mac: { primary: KeyMod.CtrlCmd | KeyMod.Alt | KeyCode.KeyP },
 			handler: (accessor, args: any) => {
 				const editorPane = accessor.get(IEditorService).activeEditorPane;
 				if (editorPane instanceof KeybindingsEditor) {
@@ -1011,7 +1056,7 @@ class PreferencesActionsContribution extends Disposable implements IWorkbenchCon
 			id: KEYBINDINGS_EDITOR_COMMAND_COPY,
 			weight: KeybindingWeight.WorkbenchContrib,
 			when: ContextKeyExpr.and(CONTEXT_KEYBINDINGS_EDITOR, CONTEXT_KEYBINDING_FOCUS),
-			primary: KeyMod.CtrlCmd | KeyCode.KEY_C,
+			primary: KeyMod.CtrlCmd | KeyCode.KeyC,
 			handler: async (accessor, args: any) => {
 				const editorPane = accessor.get(IEditorService).activeEditorPane;
 				if (editorPane instanceof KeybindingsEditor) {
@@ -1034,6 +1079,19 @@ class PreferencesActionsContribution extends Disposable implements IWorkbenchCon
 		});
 
 		KeybindingsRegistry.registerCommandAndKeybindingRule({
+			id: KEYBINDINGS_EDITOR_COMMAND_COPY_COMMAND_TITLE,
+			weight: KeybindingWeight.WorkbenchContrib,
+			when: ContextKeyExpr.and(CONTEXT_KEYBINDINGS_EDITOR, CONTEXT_KEYBINDING_FOCUS),
+			primary: 0,
+			handler: async (accessor, args: any) => {
+				const editorPane = accessor.get(IEditorService).activeEditorPane;
+				if (editorPane instanceof KeybindingsEditor) {
+					await editorPane.copyKeybindingCommandTitle(editorPane.activeKeybindingEntry!);
+				}
+			}
+		});
+
+		KeybindingsRegistry.registerCommandAndKeybindingRule({
 			id: KEYBINDINGS_EDITOR_COMMAND_FOCUS_KEYBINDINGS,
 			weight: KeybindingWeight.WorkbenchContrib,
 			when: ContextKeyExpr.and(CONTEXT_KEYBINDINGS_EDITOR, CONTEXT_KEYBINDINGS_SEARCH_FOCUS),
@@ -1050,7 +1108,7 @@ class PreferencesActionsContribution extends Disposable implements IWorkbenchCon
 	private updatePreferencesEditorMenuItem() {
 		const commandId = '_workbench.openWorkspaceSettingsEditor';
 		if (this.workspaceContextService.getWorkbenchState() === WorkbenchState.WORKSPACE && !CommandsRegistry.getCommand(commandId)) {
-			CommandsRegistry.registerCommand(commandId, () => this.preferencesService.openWorkspaceSettings(false));
+			CommandsRegistry.registerCommand(commandId, () => this.preferencesService.openWorkspaceSettings({ jsonEditor: false }));
 			MenuRegistry.appendMenuItem(MenuId.EditorTitle, {
 				command: {
 					id: commandId,
@@ -1071,9 +1129,9 @@ class PreferencesActionsContribution extends Disposable implements IWorkbenchCon
 			if (!CommandsRegistry.getCommand(commandId)) {
 				CommandsRegistry.registerCommand(commandId, () => {
 					if (this.workspaceContextService.getWorkbenchState() === WorkbenchState.FOLDER) {
-						return this.preferencesService.openWorkspaceSettings(false);
+						return this.preferencesService.openWorkspaceSettings({ jsonEditor: false });
 					} else {
-						return this.preferencesService.openFolderSettings(folder.uri, false);
+						return this.preferencesService.openFolderSettings({ folderUri: folder.uri, jsonEditor: false });
 					}
 				});
 				MenuRegistry.appendMenuItem(MenuId.EditorTitle, {

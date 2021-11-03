@@ -42,7 +42,6 @@ import {
 import { URI } from 'vs/base/common/uri';
 import { IWorkbenchEnvironmentService } from 'vs/workbench/services/environment/common/environmentService';
 import { Schemas } from 'vs/base/common/network';
-import { IPanelService } from 'vs/workbench/services/panel/common/panelService';
 import { IPathService } from 'vs/workbench/services/path/common/pathService';
 import { IViewsService, IViewDescriptorService, ViewContainerLocation } from 'vs/workbench/common/views';
 import { ILogService } from 'vs/platform/log/common/log';
@@ -51,6 +50,7 @@ import { IShellLaunchConfig, TerminalSettingId } from 'vs/platform/terminal/comm
 import { TerminalProcessExtHostProxy } from 'vs/workbench/contrib/terminal/browser/terminalProcessExtHostProxy';
 import { TaskTerminalStatus } from 'vs/workbench/contrib/tasks/browser/taskTerminalStatus';
 import { ITaskService } from 'vs/workbench/contrib/tasks/common/taskService';
+import { IPaneCompositePartService } from 'vs/workbench/services/panecomposite/browser/panecomposite';
 
 interface TerminalData {
 	terminal: ITerminalInstance;
@@ -200,6 +200,7 @@ export class TerminalTaskSystem extends Disposable implements ITaskSystem {
 	private previousPanelId: string | undefined;
 	private previousTerminalInstance: ITerminalInstance | undefined;
 	private terminalStatusManager: TaskTerminalStatus;
+	private terminalCreationQueue: Promise<ITerminalInstance | void> = Promise.resolve();
 
 	private readonly _onDidStateChange: Emitter<TaskEvent>;
 
@@ -207,7 +208,7 @@ export class TerminalTaskSystem extends Disposable implements ITaskSystem {
 		private terminalService: ITerminalService,
 		private terminalGroupService: ITerminalGroupService,
 		private outputService: IOutputService,
-		private panelService: IPanelService,
+		private paneCompositeService: IPaneCompositePartService,
 		private viewsService: IViewsService,
 		private markerService: IMarkerService, private modelService: IModelService,
 		private configurationResolverService: IConfigurationResolverService,
@@ -328,15 +329,15 @@ export class TerminalTaskSystem extends Disposable implements ITaskSystem {
 				if (this.previousTerminalInstance) {
 					this.terminalService.setActiveInstance(this.previousTerminalInstance);
 				}
-				this.panelService.openPanel(this.previousPanelId);
+				this.paneCompositeService.openPaneComposite(this.previousPanelId, ViewContainerLocation.Panel);
 			} else {
-				this.panelService.hideActivePanel();
+				this.paneCompositeService.hideActivePaneComposite(ViewContainerLocation.Panel);
 			}
 			this.previousPanelId = undefined;
 			this.previousTerminalInstance = undefined;
 		} else {
 			if (isTerminalInPanel) {
-				this.previousPanelId = this.panelService.getActivePanel()?.getId();
+				this.previousPanelId = this.paneCompositeService.getActivePaneComposite(ViewContainerLocation.Panel)?.getId();
 				if (this.previousPanelId === TERMINAL_VIEW_ID) {
 					this.previousTerminalInstance = this.terminalService.activeInstance ?? undefined;
 				}
@@ -1059,11 +1060,16 @@ export class TerminalTaskSystem extends Disposable implements ITaskSystem {
 				os,
 				remoteAuthority: this.environmentService.remoteAuthority
 			});
-			const defaultConfig = {
-				shell: defaultProfile.path,
-				args: defaultProfile.args
+			shellLaunchConfig = {
+				name: terminalName,
+				description,
+				executable: defaultProfile.path,
+				args: defaultProfile.args,
+				icon: defaultProfile.icon,
+				env: { ...defaultProfile.env },
+				color: defaultProfile.color,
+				waitOnExit
 			};
-			shellLaunchConfig = { name: terminalName, description, executable: defaultConfig.shell, args: defaultConfig.args, waitOnExit };
 			let shellSpecified: boolean = false;
 			let shellOptions: ShellConfiguration | undefined = task.command.options && task.command.options.shell;
 			if (shellOptions) {
@@ -1189,11 +1195,34 @@ export class TerminalTaskSystem extends Disposable implements ITaskSystem {
 			shellLaunchConfig.cwd = isUNC(cwd) ? cwd : resources.toLocalResource(URI.from({ scheme: Schemas.file, path: cwd }), this.environmentService.remoteAuthority, this.pathService.defaultUriScheme);
 		}
 		if (options.env) {
-			shellLaunchConfig.env = options.env;
+			if (shellLaunchConfig.env) {
+				shellLaunchConfig.env = { ...shellLaunchConfig.env, ...options.env };
+			} else {
+				shellLaunchConfig.env = options.env;
+			}
 		}
 		shellLaunchConfig.isFeatureTerminal = true;
 		shellLaunchConfig.useShellEnvironment = true;
 		return shellLaunchConfig;
+	}
+
+	private async doCreateTerminal(group: string | undefined, launchConfigs: IShellLaunchConfig): Promise<ITerminalInstance> {
+		if (group) {
+			// Try to find an existing terminal to split.
+			// Even if an existing terminal is found, the split can fail if the terminal width is too small.
+			for (const terminal of values(this.terminals)) {
+				if (terminal.group === group) {
+					const originalInstance = terminal.terminal;
+					console.log('splitting');
+					const result = await this.terminalService.createTerminal({ location: { parentTerminal: originalInstance }, config: launchConfigs });
+					if (result) {
+						return result;
+					}
+				}
+			}
+		}
+		// Either no group is used, no terminal with the group exists or splitting an existing terminal failed.
+		return this.terminalService.createTerminal({ config: launchConfigs });
 	}
 
 	private async createTerminal(task: CustomTask | ContributedTask, resolver: VariableResolver, workspaceFolder: IWorkspaceFolder | undefined): Promise<[ITerminalInstance | undefined, string | undefined, TaskError | undefined]> {
@@ -1239,13 +1268,10 @@ export class TerminalTaskSystem extends Disposable implements ITaskSystem {
 			args = resolvedResult.args;
 			commandExecutable = CommandString.value(command);
 
-			this.currentTask.shellLaunchConfig = launchConfigs = (this.isRerun && this.lastTask) ? this.lastTask.getVerifiedTask().shellLaunchConfig : await this.createShellLaunchConfig(task, workspaceFolder, resolver, platform, options, command, args, waitOnExit);
+			this.currentTask.shellLaunchConfig = launchConfigs = await this.createShellLaunchConfig(task, workspaceFolder, resolver, platform, options, command, args, waitOnExit);
 			if (launchConfigs === undefined) {
 				return [undefined, undefined, new TaskError(Severity.Error, nls.localize('TerminalTaskSystem', 'Can\'t execute a shell command on an UNC drive using cmd.exe.'), TaskErrors.UnknownError)];
 			}
-		}
-		if (this.currentTask.shellLaunchConfig) {
-			this.currentTask.shellLaunchConfig.icon = { id: 'tools' };
 		}
 
 		let prefersSameTerminal = presentationOptions.panel === PanelKind.Dedicated;
@@ -1285,34 +1311,19 @@ export class TerminalTaskSystem extends Disposable implements ITaskSystem {
 			}
 
 			terminalToReuse.terminal.scrollToBottom();
-			terminalToReuse.terminal.reuseTerminal(launchConfigs);
+			await terminalToReuse.terminal.reuseTerminal(launchConfigs);
 
 			if (task.command.presentation && task.command.presentation.clear) {
-				terminalToReuse.terminal.clear();
+				terminalToReuse.terminal.clearBuffer();
 			}
 			this.terminals[terminalToReuse.terminal.instanceId.toString()].lastTask = taskKey;
 			return [terminalToReuse.terminal, commandExecutable, undefined];
 		}
 
-		let result: ITerminalInstance | null = null;
-		if (group) {
-			// Try to find an existing terminal to split.
-			// Even if an existing terminal is found, the split can fail if the terminal width is too small.
-			for (const terminal of values(this.terminals)) {
-				if (terminal.group === group) {
-					const originalInstance = terminal.terminal;
-					await originalInstance.waitForTitle();
-					result = await this.terminalService.splitInstance(originalInstance, launchConfigs);
-					if (result) {
-						break;
-					}
-				}
-			}
-		}
-		if (!result) {
-			// Either no group is used, no terminal with the group exists or splitting an existing terminal failed.
-			result = await this.terminalService.createTerminal({ config: launchConfigs });
-		}
+		await this.terminalCreationQueue;
+		const createTerminalPromise = this.doCreateTerminal(group, launchConfigs);
+		this.terminalCreationQueue = createTerminalPromise;
+		const result: ITerminalInstance = await createTerminalPromise;
 
 		const terminalKey = result.instanceId.toString();
 		result.onDisposed((terminal) => {

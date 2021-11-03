@@ -3,39 +3,40 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { join } from 'vs/base/common/path';
-import { localize } from 'vs/nls';
-import { getMarks, mark } from 'vs/base/common/performance';
+import { app, BrowserWindow, BrowserWindowConstructorOptions, Display, Event, nativeImage, NativeImage, Rectangle, screen, SegmentedControlSegment, systemPreferences, TouchBar, TouchBarSegmentedControl, WebFrameMain } from 'electron';
+import { RunOnceScheduler } from 'vs/base/common/async';
+import { CancellationToken } from 'vs/base/common/cancellation';
+import { toErrorMessage } from 'vs/base/common/errorMessage';
 import { Emitter } from 'vs/base/common/event';
-import { URI } from 'vs/base/common/uri';
-import { screen, BrowserWindow, systemPreferences, app, TouchBar, nativeImage, Rectangle, Display, TouchBarSegmentedControl, NativeImage, BrowserWindowConstructorOptions, SegmentedControlSegment, Event, WebFrameMain } from 'electron';
-import { IEnvironmentMainService } from 'vs/platform/environment/electron-main/environmentMainService';
-import { ILogService } from 'vs/platform/log/common/log';
-import { IConfigurationService } from 'vs/platform/configuration/common/configuration';
-import { NativeParsedArgs } from 'vs/platform/environment/common/argv';
-import { IProductService } from 'vs/platform/product/common/productService';
-import { WindowMinimumSize, IWindowSettings, MenuBarVisibility, getTitleBarStyle, getMenuBarVisibility, zoomLevelToZoomFactor, INativeWindowConfiguration } from 'vs/platform/windows/common/windows';
+import { mnemonicButtonLabel } from 'vs/base/common/labels';
 import { Disposable } from 'vs/base/common/lifecycle';
-import { browserCodeLoadingCacheStrategy, isLinux, isMacintosh, isWindows } from 'vs/base/common/platform';
-import { defaultWindowState, ICodeWindow, ILoadEvent, IWindowState, LoadReason, WindowError, WindowMode } from 'vs/platform/windows/electron-main/windows';
+import { FileAccess, Schemas } from 'vs/base/common/network';
+import { join } from 'vs/base/common/path';
+import { getMarks, mark } from 'vs/base/common/performance';
+import { isLinux, isMacintosh, isWindows } from 'vs/base/common/platform';
+import { URI } from 'vs/base/common/uri';
+import { localize } from 'vs/nls';
+import { ISerializableCommandAction } from 'vs/platform/actions/common/actions';
+import { IBackupMainService } from 'vs/platform/backup/electron-main/backup';
+import { IConfigurationService } from 'vs/platform/configuration/common/configuration';
+import { IDialogMainService } from 'vs/platform/dialogs/electron-main/dialogMainService';
+import { NativeParsedArgs } from 'vs/platform/environment/common/argv';
+import { IEnvironmentMainService } from 'vs/platform/environment/electron-main/environmentMainService';
+import { isLaunchedFromCli } from 'vs/platform/environment/node/argvHelper';
+import { resolveMarketplaceHeaders } from 'vs/platform/extensionManagement/common/extensionGalleryService';
+import { IFileService } from 'vs/platform/files/common/files';
+import { ILifecycleMainService } from 'vs/platform/lifecycle/electron-main/lifecycleMainService';
+import { ILogService } from 'vs/platform/log/common/log';
+import { IProductService } from 'vs/platform/product/common/productService';
+import { IProtocolMainService } from 'vs/platform/protocol/electron-main/protocol';
+import { IStorageMainService } from 'vs/platform/storage/electron-main/storageMainService';
+import { ITelemetryService } from 'vs/platform/telemetry/common/telemetry';
+import { ThemeIcon } from 'vs/platform/theme/common/themeService';
+import { IThemeMainService } from 'vs/platform/theme/electron-main/themeMainService';
+import { getMenuBarVisibility, getTitleBarStyle, IFolderToOpen, INativeWindowConfiguration, IWindowSettings, IWorkspaceToOpen, MenuBarVisibility, WindowMinimumSize, zoomLevelToZoomFactor } from 'vs/platform/windows/common/windows';
+import { defaultWindowState, ICodeWindow, ILoadEvent, IWindowsMainService, IWindowState, LoadReason, OpenContext, WindowError, WindowMode } from 'vs/platform/windows/electron-main/windows';
 import { ISingleFolderWorkspaceIdentifier, isSingleFolderWorkspaceIdentifier, isWorkspaceIdentifier, IWorkspaceIdentifier } from 'vs/platform/workspaces/common/workspaces';
 import { IWorkspacesManagementMainService } from 'vs/platform/workspaces/electron-main/workspacesManagementMainService';
-import { IBackupMainService } from 'vs/platform/backup/electron-main/backup';
-import { ISerializableCommandAction } from 'vs/platform/actions/common/actions';
-import { resolveMarketplaceHeaders } from 'vs/platform/extensionManagement/common/extensionGalleryService';
-import { IThemeMainService } from 'vs/platform/theme/electron-main/themeMainService';
-import { ITelemetryService } from 'vs/platform/telemetry/common/telemetry';
-import { IDialogMainService } from 'vs/platform/dialogs/electron-main/dialogMainService';
-import { mnemonicButtonLabel } from 'vs/base/common/labels';
-import { ThemeIcon } from 'vs/platform/theme/common/themeService';
-import { ILifecycleMainService } from 'vs/platform/lifecycle/electron-main/lifecycleMainService';
-import { IStorageMainService } from 'vs/platform/storage/electron-main/storageMainService';
-import { IFileService } from 'vs/platform/files/common/files';
-import { FileAccess, Schemas } from 'vs/base/common/network';
-import { isLaunchedFromCli } from 'vs/platform/environment/node/argvHelper';
-import { CancellationToken } from 'vs/base/common/cancellation';
-import { IProtocolMainService } from 'vs/platform/protocol/electron-main/protocol';
-import { RunOnceScheduler } from 'vs/base/common/async';
 
 export interface IWindowCreationOptions {
 	state: IWindowState;
@@ -158,7 +159,8 @@ export class CodeWindow extends Disposable implements ICodeWindow {
 		@IDialogMainService private readonly dialogMainService: IDialogMainService,
 		@ILifecycleMainService private readonly lifecycleMainService: ILifecycleMainService,
 		@IProductService private readonly productService: IProductService,
-		@IProtocolMainService private readonly protocolMainService: IProtocolMainService
+		@IProtocolMainService private readonly protocolMainService: IProtocolMainService,
+		@IWindowsMainService private readonly windowsMainService: IWindowsMainService
 	) {
 		super();
 
@@ -187,7 +189,7 @@ export class CodeWindow extends Disposable implements ICodeWindow {
 				webPreferences: {
 					preload: FileAccess.asFileUri('vs/base/parts/sandbox/electron-browser/preload.js', require).fsPath,
 					additionalArguments: [`--vscode-window-config=${this.configObjectUrl.resource.toString()}`],
-					v8CacheOptions: browserCodeLoadingCacheStrategy,
+					v8CacheOptions: this.environmentMainService.useCodeCache ? 'bypassHeatCheck' : 'none',
 					enableWebSQL: false,
 					spellcheck: false,
 					nativeWindowOpen: true,
@@ -206,12 +208,6 @@ export class CodeWindow extends Disposable implements ICodeWindow {
 						}
 				}
 			};
-
-			if (browserCodeLoadingCacheStrategy) {
-				this.logService.info(`window: using vscode-file:// protocol and V8 cache options: ${browserCodeLoadingCacheStrategy}`);
-			} else {
-				this.logService.info(`window: vscode-file:// protocol is explicitly disabled`);
-			}
 
 			// Apply icon to window
 			// Linux: always
@@ -308,7 +304,7 @@ export class CodeWindow extends Disposable implements ICodeWindow {
 		this.createTouchBar();
 
 		// Request handling
-		this.marketplaceHeadersPromise = resolveMarketplaceHeaders(this.productService.version, this.environmentMainService, this.fileService, {
+		this.marketplaceHeadersPromise = resolveMarketplaceHeaders(this.productService.version, this.productService, this.environmentMainService, this.configurationService, this.fileService, {
 			get: key => storageMainService.globalStorage.get(key),
 			store: (key, value) => storageMainService.globalStorage.set(key, value)
 		});
@@ -440,7 +436,7 @@ export class CodeWindow extends Disposable implements ICodeWindow {
 		});
 
 		// Block all SVG requests from unsupported origins
-		const supportedSvgSchemes = new Set([Schemas.file, Schemas.vscodeFileResource, Schemas.vscodeRemoteResource, 'devtools']); // TODO@mjbvz: handle webview origin
+		const supportedSvgSchemes = new Set([Schemas.file, Schemas.vscodeFileResource, Schemas.vscodeRemoteResource, 'devtools']);
 
 		// But allow them if the are made from inside an webview
 		const isSafeFrame = (requestFrame: WebFrameMain | undefined): boolean => {
@@ -459,7 +455,7 @@ export class CodeWindow extends Disposable implements ICodeWindow {
 		this._win.webContents.session.webRequest.onBeforeRequest((details, callback) => {
 			const uri = URI.parse(details.url);
 			if (uri.path.endsWith('.svg')) {
-				const isSafeResourceUrl = supportedSvgSchemes.has(uri.scheme) || uri.path.includes(Schemas.vscodeRemoteResource);
+				const isSafeResourceUrl = supportedSvgSchemes.has(uri.scheme);
 				if (!isSafeResourceUrl) {
 					return callback({ cancel: !isRequestFromSafeContext(details) });
 				}
@@ -623,15 +619,10 @@ export class CodeWindow extends Disposable implements ICodeWindow {
 						cancelId: 1
 					}, this._win);
 
-					if (!this._win) {
-						return; // Return early if the window has been going down already
-					}
-
-					if (result.response === 0) {
-						this._win.webContents.forcefullyCrashRenderer(); // Calling reload() immediately after calling this method will force the reload to occur in a new process
-						this.reload();
-					} else if (result.response === 2) {
-						this.destroyWindow();
+					// Handle choice
+					if (result.response !== 1 /* keep waiting */) {
+						const reopen = result.response === 0;
+						this.destroyWindow(reopen);
 					}
 				}
 
@@ -644,6 +635,7 @@ export class CodeWindow extends Disposable implements ICodeWindow {
 						message = localize('appCrashedDetails', "The window has crashed (reason: '{0}', code: '{1}')", details.reason, details.exitCode ?? '<unknown>');
 					}
 
+					// Show Dialog
 					const result = await this.dialogMainService.showMessageBox({
 						title: this.productService.nameLong,
 						type: 'warning',
@@ -657,23 +649,50 @@ export class CodeWindow extends Disposable implements ICodeWindow {
 						defaultId: 0
 					}, this._win);
 
-					if (!this._win) {
-						return; // Return early if the window has been going down already
-					}
-
-					if (result.response === 0) {
-						this.reload();
-					} else if (result.response === 1) {
-						this.destroyWindow();
-					}
+					// Handle choice
+					const reopen = result.response === 0;
+					this.destroyWindow(reopen);
 				}
 				break;
 		}
 	}
 
-	private destroyWindow(): void {
-		this._onDidDestroy.fire(); 	// 'close' event will not be fired on destroy(), so signal crash via explicit event
-		this._win.destroy(); 		// make sure to destroy the window as it has crashed
+	private destroyWindow(reopen: boolean): void {
+
+		// 'close' event will not be fired on destroy(), so signal crash via explicit event
+		this._onDidDestroy.fire();
+
+		// make sure to destroy the window as it has crashed
+		this._win?.destroy();
+
+		// ask the windows service to open a new fresh window if specified
+		if (reopen && this.config) {
+
+			// We have to reconstruct a openable from the current workspace
+			let workspace: IWorkspaceToOpen | IFolderToOpen | undefined = undefined;
+			let forceEmpty = undefined;
+			if (isSingleFolderWorkspaceIdentifier(this.openedWorkspace)) {
+				workspace = { folderUri: this.openedWorkspace.uri };
+			} else if (isWorkspaceIdentifier(this.openedWorkspace)) {
+				workspace = { workspaceUri: this.openedWorkspace.configPath };
+			} else {
+				forceEmpty = true;
+			}
+
+			// Delegate to windows service
+			const [window] = this.windowsMainService.open({
+				context: OpenContext.API,
+				userEnv: this.config.userEnv,
+				cli: {
+					...this.environmentMainService.args,
+					_: [] // we pass in the workspace to open explicitly via `urisToOpen`
+				},
+				urisToOpen: workspace ? [workspace] : undefined,
+				forceEmpty,
+				forceNewWindow: true
+			});
+			window.focus();
+		}
 	}
 
 	private onDidDeleteUntitledWorkspace(workspace: IWorkspaceIdentifier): void {
@@ -850,6 +869,7 @@ export class CodeWindow extends Disposable implements ICodeWindow {
 		if (this.isExtensionDevelopmentHost && cli) {
 			configuration.verbose = cli.verbose;
 			configuration.debugId = cli.debugId;
+			configuration.extensionEnvironment = cli.extensionEnvironment;
 			configuration['inspect-extensions'] = cli['inspect-extensions'];
 			configuration['inspect-brk-extensions'] = cli['inspect-brk-extensions'];
 			configuration['extensions-dir'] = cli['extensions-dir'];
@@ -1296,11 +1316,15 @@ export class CodeWindow extends Disposable implements ICodeWindow {
 	send(channel: string, ...args: any[]): void {
 		if (this._win) {
 			if (this._win.isDestroyed() || this._win.webContents.isDestroyed()) {
-				this.logService.warn(`Sending IPC message to channel ${channel} for window that is destroyed`);
+				this.logService.warn(`Sending IPC message to channel '${channel}' for window that is destroyed`);
 				return;
 			}
 
-			this._win.webContents.send(channel, ...args);
+			try {
+				this._win.webContents.send(channel, ...args);
+			} catch (error) {
+				this.logService.warn(`Error sending IPC message to channel '${channel}' of window ${this._id}: ${toErrorMessage(error)}`);
+			}
 		}
 	}
 

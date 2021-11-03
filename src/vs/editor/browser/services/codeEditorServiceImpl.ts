@@ -339,7 +339,8 @@ export class DecorationTypeOptionsProvider implements IModelDecorationOptionsPro
 			isWholeLine: this.isWholeLine,
 			overviewRuler: this.overviewRuler,
 			stickiness: this.stickiness,
-			before: this.beforeInjectedText
+			before: this.beforeInjectedText,
+			after: this.afterInjectedText
 		};
 	}
 
@@ -387,7 +388,9 @@ export const _CSS_MAP: { [prop: string]: string; } = {
 	margin: 'margin:{0};',
 	padding: 'padding:{0};',
 	width: 'width:{0};',
-	height: 'height:{0};'
+	height: 'height:{0};',
+
+	verticalAlign: 'vertical-align:{0};',
 };
 
 
@@ -568,7 +571,7 @@ class DecorationCSSRules {
 
 				cssTextArr.push(strings.format(_CSS_MAP.contentText, escaped));
 			}
-			this.collectCSSText(opts, ['fontStyle', 'fontWeight', 'fontSize', 'fontFamily', 'textDecoration', 'color', 'opacity', 'backgroundColor', 'margin', 'padding'], cssTextArr);
+			this.collectCSSText(opts, ['verticalAlign', 'fontStyle', 'fontWeight', 'fontSize', 'fontFamily', 'textDecoration', 'color', 'opacity', 'backgroundColor', 'margin', 'padding'], cssTextArr);
 			if (this.collectCSSText(opts, ['width', 'height'], cssTextArr)) {
 				cssTextArr.push('display:inline-block;');
 			}

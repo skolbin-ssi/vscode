@@ -3,13 +3,13 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { INativeEnvironmentService } from 'vs/platform/environment/common/environment';
-import { join } from 'vs/base/common/path';
-import { Promises } from 'vs/base/node/pfs';
+import { RunOnceScheduler } from 'vs/base/common/async';
 import { onUnexpectedError } from 'vs/base/common/errors';
 import { Disposable } from 'vs/base/common/lifecycle';
+import { join } from 'vs/base/common/path';
+import { Promises } from 'vs/base/node/pfs';
 import { IBackupWorkspacesFormat } from 'vs/platform/backup/node/backup';
-import { RunOnceScheduler } from 'vs/base/common/async';
+import { INativeEnvironmentService } from 'vs/platform/environment/common/environment';
 import { ILogService } from 'vs/platform/log/common/log';
 
 export class StorageDataCleaner extends Disposable {
@@ -31,7 +31,7 @@ export class StorageDataCleaner extends Disposable {
 	}
 
 	private async cleanUpStorage(): Promise<void> {
-		this.logService.info('[storage cleanup]: Starting to clean up storage folders.');
+		this.logService.trace('[storage cleanup]: Starting to clean up storage folders.');
 
 		try {
 
@@ -50,7 +50,7 @@ export class StorageDataCleaner extends Disposable {
 				}
 
 				if (emptyWorkspaces.indexOf(storageFolder) === -1) {
-					this.logService.info(`[storage cleanup]: Deleting storage folder ${storageFolder}.`);
+					this.logService.trace(`[storage cleanup]: Deleting storage folder ${storageFolder}.`);
 
 					await Promises.rm(join(this.environmentService.workspaceStorageHome.fsPath, storageFolder));
 				}

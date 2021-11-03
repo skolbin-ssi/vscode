@@ -6,7 +6,7 @@
 import * as DOM from 'vs/base/browser/dom';
 import { ITreeNavigator } from 'vs/base/browser/ui/tree/tree';
 import { Action } from 'vs/base/common/actions';
-import { createKeybinding, ResolvedKeybinding } from 'vs/base/common/keyCodes';
+import { createKeybinding, ResolvedKeybinding } from 'vs/base/common/keybindings';
 import { isWindows, OS } from 'vs/base/common/platform';
 import * as nls from 'vs/nls';
 import { IClipboardService } from 'vs/platform/clipboard/common/clipboardService';
@@ -449,9 +449,10 @@ export class RemoveAction extends AbstractSearchAndReplaceAction {
 
 	constructor(
 		private viewer: WorkbenchObjectTree<RenderableMatch>,
-		private element: RenderableMatch
+		private element: RenderableMatch,
+		@IKeybindingService keyBindingService: IKeybindingService
 	) {
-		super('remove', RemoveAction.LABEL, ThemeIcon.asClassName(searchRemoveIcon));
+		super(Constants.RemoveActionId, appendKeyBindingLabel(RemoveAction.LABEL, keyBindingService.lookupKeybinding(Constants.RemoveActionId), keyBindingService), ThemeIcon.asClassName(searchRemoveIcon));
 	}
 
 	override run(): Promise<any> {

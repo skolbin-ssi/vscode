@@ -11,8 +11,6 @@ import { IWorkbenchContribution } from 'vs/workbench/common/contributions';
 import { Disposable, MutableDisposable } from 'vs/base/common/lifecycle';
 import { Event } from 'vs/base/common/event';
 import { Action } from 'vs/base/common/actions';
-import { IViewlet } from 'vs/workbench/common/viewlet';
-import { IViewletService } from 'vs/workbench/services/viewlet/browser/viewlet';
 import { append, $, Dimension, hide, show } from 'vs/base/browser/dom';
 import { ITelemetryService } from 'vs/platform/telemetry/common/telemetry';
 import { IInstantiationService, ServicesAccessor } from 'vs/platform/instantiation/common/instantiation';
@@ -29,10 +27,10 @@ import Severity from 'vs/base/common/severity';
 import { IActivityService, NumberBadge } from 'vs/workbench/services/activity/common/activity';
 import { IThemeService } from 'vs/platform/theme/common/themeService';
 import { IConfigurationService } from 'vs/platform/configuration/common/configuration';
-import { IViewsRegistry, IViewDescriptor, Extensions, ViewContainer, IViewDescriptorService, IAddedViewDescriptorRef } from 'vs/workbench/common/views';
+import { IViewsRegistry, IViewDescriptor, Extensions, ViewContainer, IViewDescriptorService, IAddedViewDescriptorRef, ViewContainerLocation } from 'vs/workbench/common/views';
 import { IStorageService, StorageScope, StorageTarget } from 'vs/platform/storage/common/storage';
 import { IWorkspaceContextService } from 'vs/platform/workspace/common/workspace';
-import { IContextKeyService, ContextKeyExpr, RawContextKey, IContextKey, ContextKeyEqualsExpr } from 'vs/platform/contextkey/common/contextkey';
+import { IContextKeyService, ContextKeyExpr, RawContextKey, IContextKey } from 'vs/platform/contextkey/common/contextkey';
 import { IContextMenuService } from 'vs/platform/contextview/browser/contextView';
 import { getMaliciousExtensionsSet } from 'vs/platform/extensionManagement/common/extensionManagementUtil';
 import { ILogService } from 'vs/platform/log/common/log';
@@ -59,6 +57,8 @@ import { ICommandService } from 'vs/platform/commands/common/commands';
 import { isWeb } from 'vs/base/common/platform';
 import { installLocalInRemoteIcon } from 'vs/workbench/contrib/extensions/browser/extensionsIcons';
 import { registerAction2, Action2, MenuId } from 'vs/platform/actions/common/actions';
+import { IPaneComposite } from 'vs/workbench/common/panecomposite';
+import { IPaneCompositePartService } from 'vs/workbench/services/panecomposite/browser/panecomposite';
 
 const SearchMarketplaceExtensionsContext = new RawContextKey<boolean>('searchMarketplaceExtensions', false);
 const SearchIntalledExtensionsContext = new RawContextKey<boolean>('searchInstalledExtensions', false);
@@ -183,7 +183,7 @@ export class ExtensionsViewletViewsContribution implements IWorkbenchContributio
 							f1: true,
 							menu: {
 								id: MenuId.ViewTitle,
-								when: ContextKeyEqualsExpr.create('view', id),
+								when: ContextKeyExpr.equals('view', id),
 								group: 'navigation',
 							}
 						});
@@ -469,7 +469,7 @@ export class ExtensionsViewPaneContainer extends ViewPaneContainer implements IE
 		@IExtensionsWorkbenchService private readonly extensionsWorkbenchService: IExtensionsWorkbenchService,
 		@IExtensionManagementServerService private readonly extensionManagementServerService: IExtensionManagementServerService,
 		@INotificationService private readonly notificationService: INotificationService,
-		@IViewletService private readonly viewletService: IViewletService,
+		@IPaneCompositePartService private readonly paneCompositeService: IPaneCompositePartService,
 		@IThemeService themeService: IThemeService,
 		@IConfigurationService configurationService: IConfigurationService,
 		@IStorageService storageService: IStorageService,
@@ -497,7 +497,7 @@ export class ExtensionsViewPaneContainer extends ViewPaneContainer implements IE
 		this.builtInExtensionsContextKey = BuiltInExtensionsContext.bindTo(contextKeyService);
 		this.searchBuiltInExtensionsContextKey = SearchBuiltInExtensionsContext.bindTo(contextKeyService);
 		this.recommendedExtensionsContextKey = RecommendedExtensionsContext.bindTo(contextKeyService);
-		this._register(this.viewletService.onDidViewletOpen(this.onViewletOpen, this));
+		this._register(this.paneCompositeService.onDidPaneCompositeOpen(e => { if (e.viewContainerLocation === ViewContainerLocation.Sidebar) { this.onViewletOpen(e.composite); } }, this));
 		this.searchViewletState = this.getMemento(StorageScope.WORKSPACE, StorageTarget.USER);
 
 		if (extensionManagementServerService.webExtensionManagementServer) {
@@ -729,7 +729,7 @@ export class ExtensionsViewPaneContainer extends ViewPaneContainer implements IE
 		}
 	}
 
-	private onViewletOpen(viewlet: IViewlet): void {
+	private onViewletOpen(viewlet: IPaneComposite): void {
 		if (!viewlet || viewlet.getId() === VIEWLET_ID) {
 			return;
 		}
@@ -759,7 +759,7 @@ export class ExtensionsViewPaneContainer extends ViewPaneContainer implements IE
 		if (/ECONNREFUSED/.test(message)) {
 			const error = createErrorWithActions(localize('suggestProxyError', "Marketplace returned 'ECONNREFUSED'. Please check the 'http.proxy' setting."), {
 				actions: [
-					new Action('open user settings', localize('open user settings', "Open User Settings"), undefined, true, () => this.preferencesService.openGlobalSettings())
+					new Action('open user settings', localize('open user settings', "Open User Settings"), undefined, true, () => this.preferencesService.openUserSettings())
 				]
 			});
 
