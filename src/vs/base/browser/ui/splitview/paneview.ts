@@ -5,9 +5,10 @@
 
 import { isFirefox } from 'vs/base/browser/browser';
 import { DataTransfers } from 'vs/base/browser/dnd';
-import { $, addDisposableListener, append, clearNode, EventHelper, trackFocus } from 'vs/base/browser/dom';
+import { $, addDisposableListener, append, clearNode, EventHelper, EventType, trackFocus } from 'vs/base/browser/dom';
 import { DomEmitter } from 'vs/base/browser/event';
 import { StandardKeyboardEvent } from 'vs/base/browser/keyboardEvent';
+import { Gesture, EventType as TouchEventType } from 'vs/base/browser/touch';
 import { Orientation } from 'vs/base/browser/ui/sash/sash';
 import { Color, RGBA } from 'vs/base/common/color';
 import { Emitter, Event } from 'vs/base/common/event';
@@ -233,11 +234,15 @@ export abstract class Pane extends Disposable implements IView {
 		this._register(onHeaderKeyDown.filter(e => e.keyCode === KeyCode.RightArrow)
 			.event(() => this.setExpanded(true), null));
 
-		this._register(addDisposableListener(this.header, 'click', e => {
-			if (!e.defaultPrevented) {
-				this.setExpanded(!this.isExpanded());
-			}
-		}));
+		this._register(Gesture.addTarget(this.header));
+
+		[EventType.CLICK, TouchEventType.Tap].forEach(eventType => {
+			this._register(addDisposableListener(this.header, eventType, e => {
+				if (!e.defaultPrevented) {
+					this.setExpanded(!this.isExpanded());
+				}
+			}));
+		});
 
 		this.body = append(this.element, $('.pane-body'));
 		this.renderBody(this.body);
@@ -300,7 +305,7 @@ class PaneDraggable extends Disposable {
 
 	private dragOverCounter = 0; // see https://github.com/microsoft/vscode/issues/14470
 
-	private _onDidDrop = this._register(new Emitter<{ from: Pane, to: Pane }>());
+	private _onDidDrop = this._register(new Emitter<{ from: Pane; to: Pane }>());
 	readonly onDidDrop = this._onDidDrop.event;
 
 	constructor(private pane: Pane, private dnd: IPaneDndController, private context: IDndContext) {
@@ -439,8 +444,8 @@ export class PaneView extends Disposable {
 	private splitview: SplitView;
 	private animationTimer: number | undefined = undefined;
 
-	private _onDidDrop = this._register(new Emitter<{ from: Pane, to: Pane }>());
-	readonly onDidDrop: Event<{ from: Pane, to: Pane }> = this._onDidDrop.event;
+	private _onDidDrop = this._register(new Emitter<{ from: Pane; to: Pane }>());
+	readonly onDidDrop: Event<{ from: Pane; to: Pane }> = this._onDidDrop.event;
 
 	orientation: Orientation;
 	readonly onDidSashChange: Event<number>;
@@ -457,6 +462,17 @@ export class PaneView extends Disposable {
 		this.onDidSashReset = this.splitview.onDidSashReset;
 		this.onDidSashChange = this.splitview.onDidSashChange;
 		this.onDidScroll = this.splitview.onDidScroll;
+
+		const onKeyDown = this._register(new DomEmitter(this.element, 'keydown'));
+		const onHeaderKeyDown = Event.chain(onKeyDown.event)
+			.filter(e => e.target instanceof HTMLElement && e.target.classList.contains('pane-header'))
+			.map(e => new StandardKeyboardEvent(e));
+
+		this._register(onHeaderKeyDown.filter(e => e.keyCode === KeyCode.UpArrow)
+			.event(() => this.focusPrevious()));
+
+		this._register(onHeaderKeyDown.filter(e => e.keyCode === KeyCode.DownArrow)
+			.event(() => this.focusNext()));
 	}
 
 	addPane(pane: Pane, size: number, index = this.splitview.length): void {
@@ -570,6 +586,32 @@ export class PaneView extends Disposable {
 			this.animationTimer = undefined;
 			this.element.classList.remove('animated');
 		}, 200);
+	}
+
+	private getPaneHeaderElements(): HTMLElement[] {
+		return [...this.element.querySelectorAll('.pane-header')] as HTMLElement[];
+	}
+
+	private focusPrevious(): void {
+		const headers = this.getPaneHeaderElements();
+		const index = headers.indexOf(document.activeElement as HTMLElement);
+
+		if (index === -1) {
+			return;
+		}
+
+		headers[Math.max(index - 1, 0)].focus();
+	}
+
+	private focusNext(): void {
+		const headers = this.getPaneHeaderElements();
+		const index = headers.indexOf(document.activeElement as HTMLElement);
+
+		if (index === -1) {
+			return;
+		}
+
+		headers[Math.min(index + 1, headers.length - 1)].focus();
 	}
 
 	override dispose(): void {

@@ -22,6 +22,8 @@ export const ITestService = createDecorator<ITestService>('testService');
 export interface IMainThreadTestController {
 	readonly id: string;
 	readonly label: IObservableValue<string>;
+	readonly canRefresh: IObservableValue<boolean>;
+	refreshTests(token: CancellationToken): Promise<void>;
 	configureRunProfile(profileId: number): void;
 	expandTest(id: string, levels: number): Promise<void>;
 	runTests(request: RunTestForControllerRequest, token: CancellationToken): Promise<void>;
@@ -207,7 +209,7 @@ export interface ITestService {
 	 * Fires when the user requests to cancel a test run -- or all runs, if no
 	 * runId is given.
 	 */
-	readonly onDidCancelTestRun: Event<{ runId: string | undefined; }>;
+	readonly onDidCancelTestRun: Event<{ runId: string | undefined }>;
 
 	/**
 	 * Event that fires when the excluded tests change.
@@ -218,6 +220,11 @@ export interface ITestService {
 	 * Test collection instance.
 	 */
 	readonly collection: IMainThreadTestCollection;
+
+	/**
+	 * Event that fires immediately before a diff is processed.
+	 */
+	readonly onWillProcessDiff: Event<TestsDiff>;
 
 	/**
 	 * Event that fires after a diff is processed.
@@ -233,6 +240,21 @@ export interface ITestService {
 	 * Registers an interface that runs tests for the given provider ID.
 	 */
 	registerTestController(providerId: string, controller: IMainThreadTestController): IDisposable;
+
+	/**
+	 * Gets a registered test controller by ID.
+	 */
+	getTestController(controllerId: string): IMainThreadTestController | undefined;
+
+	/**
+	 * Refreshes tests for the controller, or all controllers if no ID is given.
+	 */
+	refreshTests(controllerId?: string): Promise<void>;
+
+	/**
+	 * Cancels any ongoing test refreshes.
+	 */
+	cancelRefreshTests(): void;
 
 	/**
 	 * Requests that tests be executed.

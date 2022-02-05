@@ -6,7 +6,7 @@
 import { Emitter } from 'vs/base/common/event';
 import { Disposable } from 'vs/base/common/lifecycle';
 import { ILocalPtyService } from 'vs/platform/terminal/electron-sandbox/terminal';
-import { IProcessDataEvent, ITerminalChildProcess, ITerminalLaunchError, IProcessProperty, IProcessPropertyMap, ProcessPropertyType, ProcessCapability, IProcessReadyEvent } from 'vs/platform/terminal/common/terminal';
+import { IProcessDataEvent, ITerminalChildProcess, ITerminalLaunchError, IProcessProperty, IProcessPropertyMap, ProcessPropertyType, IProcessReadyEvent } from 'vs/platform/terminal/common/terminal';
 import { IPtyHostProcessReplayEvent } from 'vs/platform/terminal/common/terminalProcess';
 import { URI } from 'vs/base/common/uri';
 
@@ -26,8 +26,6 @@ export class LocalPty extends Disposable implements ITerminalChildProcess {
 		resolvedShellLaunchConfig: {},
 		overrideDimensions: undefined
 	};
-	private _capabilities: ProcessCapability[] = [];
-	get capabilities(): ProcessCapability[] { return this._capabilities; }
 	private readonly _onProcessData = this._register(new Emitter<IProcessDataEvent | string>());
 	readonly onProcessData = this._onProcessData.event;
 	private readonly _onProcessReplay = this._register(new Emitter<IPtyHostProcessReplayEvent>());
@@ -80,10 +78,10 @@ export class LocalPty extends Disposable implements ITerminalChildProcess {
 	async getCwd(): Promise<string> {
 		return this._properties.cwd || this._properties.initialCwd;
 	}
-	async refreshProperty<T extends ProcessPropertyType>(type: ProcessPropertyType): Promise<IProcessPropertyMap[T]> {
+	async refreshProperty<T extends ProcessPropertyType>(type: T): Promise<IProcessPropertyMap[T]> {
 		return this._localPtyService.refreshProperty(this.id, type);
 	}
-	async updateProperty<T extends ProcessPropertyType>(type: ProcessPropertyType, value: IProcessPropertyMap[T]): Promise<void> {
+	async updateProperty<T extends ProcessPropertyType>(type: T, value: IProcessPropertyMap[T]): Promise<void> {
 		return this._localPtyService.updateProperty(this.id, type, value);
 	}
 	getLatency(): Promise<number> {
@@ -107,7 +105,6 @@ export class LocalPty extends Disposable implements ITerminalChildProcess {
 		this._onProcessExit.fire(e);
 	}
 	handleReady(e: IProcessReadyEvent) {
-		this._capabilities = e.capabilities;
 		this._onProcessReady.fire(e);
 	}
 	handleDidChangeProperty({ type, value }: IProcessProperty<any>) {

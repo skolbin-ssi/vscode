@@ -40,8 +40,8 @@ import { coalesce } from 'vs/base/common/arrays';
 import { ICodeEditorService } from 'vs/editor/browser/services/codeEditorService';
 import { EmbeddedCodeEditorWidget } from 'vs/editor/browser/widget/embeddedCodeEditorWidget';
 import { ITextFileService } from 'vs/workbench/services/textfile/common/textfiles';
-import { IUriIdentityService } from 'vs/workbench/services/uriIdentity/common/uriIdentity';
-import { isPromiseCanceledError } from 'vs/base/common/errors';
+import { IUriIdentityService } from 'vs/platform/uriIdentity/common/uriIdentity';
+import { isCancellationError } from 'vs/base/common/errors';
 import { toAction } from 'vs/base/common/actions';
 import { EditorResolution } from 'vs/platform/editor/common/editor';
 import { hash } from 'vs/base/common/hash';
@@ -452,7 +452,7 @@ async function doSaveEditors(accessor: ServicesAccessor, editors: IEditorIdentif
 	try {
 		await editorService.save(editors, options);
 	} catch (error) {
-		if (!isPromiseCanceledError(error)) {
+		if (!isCancellationError(error)) {
 			notificationService.notify({
 				id: editors.map(({ editor }) => hash(editor.resource?.toString())).join(), // ensure unique notification ID per set of editor
 				severity: Severity.Error,
@@ -663,7 +663,7 @@ KeybindingsRegistry.registerCommandAndKeybindingRule({
 KeybindingsRegistry.registerCommandAndKeybindingRule({
 	weight: KeybindingWeight.WorkbenchContrib,
 	when: null,
-	primary: isWeb ? (KeyMod.CtrlCmd | KeyMod.Alt | KeyCode.KeyN) : KeyMod.CtrlCmd | KeyCode.KeyN,
+	primary: isWeb ? (isWindows ? KeyChord(KeyMod.CtrlCmd | KeyCode.KeyK, KeyCode.KeyN) : KeyMod.CtrlCmd | KeyMod.Alt | KeyCode.KeyN) : KeyMod.CtrlCmd | KeyCode.KeyN,
 	secondary: isWeb ? [KeyMod.CtrlCmd | KeyCode.KeyN] : undefined,
 	id: NEW_UNTITLED_FILE_COMMAND_ID,
 	description: {
@@ -697,5 +697,3 @@ KeybindingsRegistry.registerCommandAndKeybindingRule({
 		});
 	}
 });
-
-

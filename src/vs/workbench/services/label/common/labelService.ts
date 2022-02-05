@@ -21,6 +21,7 @@ import { match } from 'vs/base/common/glob';
 import { LifecyclePhase } from 'vs/workbench/services/lifecycle/common/lifecycle';
 import { registerSingleton } from 'vs/platform/instantiation/common/extensions';
 import { IPathService } from 'vs/workbench/services/path/common/pathService';
+import { isProposedApiEnabled } from 'vs/workbench/services/extensions/common/extensions';
 
 const resourceLabelFormattersExtPoint = ExtensionsRegistry.registerExtensionPoint<ResourceLabelFormatter[]>({
 	extensionPoint: 'resourceLabelFormatters',
@@ -83,7 +84,7 @@ class ResourceLabelFormattersHandler implements IWorkbenchContribution {
 	constructor(@ILabelService labelService: ILabelService) {
 		resourceLabelFormattersExtPoint.setHandler((extensions, delta) => {
 			delta.added.forEach(added => added.value.forEach(formatter => {
-				if (!added.description.enableProposedApi && formatter.formatting.workspaceTooltip) {
+				if (!isProposedApiEnabled(added.description, 'contribLabelFormatterWorkspaceTooltip') && formatter.formatting.workspaceTooltip) {
 					// workspaceTooltip is only proposed
 					formatter.formatting.workspaceTooltip = undefined;
 				}
@@ -136,7 +137,7 @@ export class LabelService extends Disposable implements ILabelService {
 		return bestResult ? bestResult.formatting : undefined;
 	}
 
-	getUriLabel(resource: URI, options: { relative?: boolean, noPrefix?: boolean, endWithSeparator?: boolean, separator?: '/' | '\\' } = {}): string {
+	getUriLabel(resource: URI, options: { relative?: boolean; noPrefix?: boolean; endWithSeparator?: boolean; separator?: '/' | '\\' } = {}): string {
 		let formatting = this.findFormatting(resource);
 		if (formatting && options.separator) {
 			// mixin separator if defined from the outside
@@ -154,7 +155,7 @@ export class LabelService extends Disposable implements ILabelService {
 		return label;
 	}
 
-	private doGetUriLabel(resource: URI, formatting?: ResourceLabelFormatting, options: { relative?: boolean, noPrefix?: boolean, endWithSeparator?: boolean } = {}): string {
+	private doGetUriLabel(resource: URI, formatting?: ResourceLabelFormatting, options: { relative?: boolean; noPrefix?: boolean; endWithSeparator?: boolean } = {}): string {
 		if (!formatting) {
 			return getPathLabel(resource.path, { userHome: this.pathService.resolvedUserHome }, options.relative ? this.contextService : undefined);
 		}

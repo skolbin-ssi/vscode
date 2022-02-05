@@ -14,7 +14,7 @@ import * as https from 'https';
 import * as gulp from 'gulp';
 import * as fancyLog from 'fancy-log';
 import * as ansiColors from 'ansi-colors';
-import * as iconv from 'iconv-lite-umd';
+import * as iconv from '@vscode/iconv-lite-umd';
 
 const NUMBER_OF_CONCURRENT_DOWNLOADS = 4;
 
@@ -277,7 +277,7 @@ export class XLF {
 	static parsePseudo = function (xlfString: string): Promise<ParsedXLF[]> {
 		return new Promise((resolve) => {
 			let parser = new xml2js.Parser();
-			let files: { messages: Map<string>, originalFilePath: string, language: string }[] = [];
+			let files: { messages: Map<string>; originalFilePath: string; language: string }[] = [];
 			parser.parseString(xlfString, function (_err: any, result: any) {
 				const fileNodes: any[] = result['xliff']['file'];
 				fileNodes.forEach(file => {
@@ -304,7 +304,7 @@ export class XLF {
 		return new Promise((resolve, reject) => {
 			let parser = new xml2js.Parser();
 
-			let files: { messages: Map<string>, originalFilePath: string, language: string }[] = [];
+			let files: { messages: Map<string>; originalFilePath: string; language: string }[] = [];
 
 			parser.parseString(xlfString, function (err: any, result: any) {
 				if (err) {

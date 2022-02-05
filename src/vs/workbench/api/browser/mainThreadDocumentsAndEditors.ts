@@ -10,15 +10,15 @@ import { ICodeEditor, isCodeEditor, isDiffEditor, IActiveCodeEditor } from 'vs/e
 import { IBulkEditService } from 'vs/editor/browser/services/bulkEditService';
 import { ICodeEditorService } from 'vs/editor/browser/services/codeEditorService';
 import { IEditor } from 'vs/editor/common/editorCommon';
-import { ITextModel } from 'vs/editor/common/model';
-import { IModelService, shouldSynchronizeModel } from 'vs/editor/common/services/modelService';
+import { ITextModel, shouldSynchronizeModel } from 'vs/editor/common/model';
+import { IModelService } from 'vs/editor/common/services/model';
 import { ITextModelService } from 'vs/editor/common/services/resolverService';
 import { IFileService } from 'vs/platform/files/common/files';
-import { extHostCustomer } from 'vs/workbench/api/common/extHostCustomers';
+import { extHostCustomer, IExtHostContext } from 'vs/workbench/services/extensions/common/extHostCustomers';
 import { MainThreadDocuments } from 'vs/workbench/api/browser/mainThreadDocuments';
 import { MainThreadTextEditor } from 'vs/workbench/api/browser/mainThreadEditor';
 import { MainThreadTextEditors } from 'vs/workbench/api/browser/mainThreadEditors';
-import { ExtHostContext, ExtHostDocumentsAndEditorsShape, IDocumentsAndEditorsDelta, IExtHostContext, IModelAddedData, ITextEditorAddData, MainContext } from 'vs/workbench/api/common/extHost.protocol';
+import { ExtHostContext, ExtHostDocumentsAndEditorsShape, IDocumentsAndEditorsDelta, IModelAddedData, ITextEditorAddData, MainContext } from 'vs/workbench/api/common/extHost.protocol';
 import { BaseTextEditor } from 'vs/workbench/browser/parts/editor/textEditor';
 import { IEditorPane } from 'vs/workbench/common/editor';
 import { EditorGroupColumn, editorGroupToColumn } from 'vs/workbench/services/editor/common/editorGroupColumn';
@@ -27,7 +27,7 @@ import { IEditorGroupsService } from 'vs/workbench/services/editor/common/editor
 import { ITextFileService } from 'vs/workbench/services/textfile/common/textfiles';
 import { IWorkbenchEnvironmentService } from 'vs/workbench/services/environment/common/environmentService';
 import { IWorkingCopyFileService } from 'vs/workbench/services/workingCopy/common/workingCopyFileService';
-import { IUriIdentityService } from 'vs/workbench/services/uriIdentity/common/uriIdentity';
+import { IUriIdentityService } from 'vs/platform/uriIdentity/common/uriIdentity';
 import { IClipboardService } from 'vs/platform/clipboard/common/clipboardService';
 import { IPathService } from 'vs/workbench/services/path/common/pathService';
 import { diffSets, diffMaps } from 'vs/base/common/collections';

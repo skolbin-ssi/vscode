@@ -4,8 +4,9 @@
  *--------------------------------------------------------------------------------------------*/
 import * as assert from 'assert';
 import { IndexedDB } from 'vs/base/browser/indexedDB';
+import { flakySuite } from 'vs/base/test/common/testUtils';
 
-suite('IndexedDB', () => {
+flakySuite('IndexedDB', () => {
 
 	let indexedDB: IndexedDB;
 
@@ -15,13 +16,33 @@ suite('IndexedDB', () => {
 	});
 
 	teardown(() => {
-		indexedDB.close();
+		if (indexedDB) {
+			indexedDB.close();
+		}
 	});
 
 	test('runInTransaction', async () => {
 		await indexedDB.runInTransaction('test-store', 'readwrite', store => store.add('hello1', 'key1'));
 		const value = await indexedDB.runInTransaction('test-store', 'readonly', store => store.get('key1'));
 		assert.deepStrictEqual(value, 'hello1');
+	});
+
+	test('getKeyValues', async () => {
+		await indexedDB.runInTransaction('test-store', 'readwrite', store => {
+			const requests: IDBRequest[] = [];
+			requests.push(store.add('hello1', 'key1'));
+			requests.push(store.add('hello2', 'key2'));
+			requests.push(store.add(true, 'key3'));
+
+			return requests;
+		});
+		function isValid(value: unknown): value is string {
+			return typeof value === 'string';
+		}
+		const keyValues = await indexedDB.getKeyValues('test-store', isValid);
+		assert.strictEqual(keyValues.size, 2);
+		assert.strictEqual(keyValues.get('key1'), 'hello1');
+		assert.strictEqual(keyValues.get('key2'), 'hello2');
 	});
 
 	test('hasPendingTransactions', async () => {

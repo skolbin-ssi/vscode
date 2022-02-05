@@ -82,8 +82,8 @@ export function configurationTelemetry(telemetryService: ITelemetryService, conf
 	return configurationService.onDidChangeConfiguration(event => {
 		if (event.source !== ConfigurationTarget.DEFAULT) {
 			type UpdateConfigurationClassification = {
-				configurationSource: { classification: 'SystemMetaData', purpose: 'FeatureInsight' };
-				configurationKeys: { classification: 'SystemMetaData', purpose: 'FeatureInsight' };
+				configurationSource: { classification: 'SystemMetaData'; purpose: 'FeatureInsight' };
+				configurationKeys: { classification: 'SystemMetaData'; purpose: 'FeatureInsight' };
 			};
 			type UpdateConfigurationEvent = {
 				configurationSource: string;
@@ -98,17 +98,17 @@ export function configurationTelemetry(telemetryService: ITelemetryService, conf
 }
 
 /**
- * Determines how telemetry is handled based on the current running configuration.
- * To log telemetry locally, the client must not disable telemetry via the CLI
- * If client is a built product and telemetry is enabled via the product.json, telemetry is supported
- * This function is only used to determine if telemetry contructs should occur, but is not impacted by user configuration
- *
+ * Determines whether or not we support logging telemetry.
+ * This checks if the product is capable of collecting telemetry but not whether or not it can send it
+ * For checking the user setting and what telemetry you can send please check `getTelemetryLevel`.
+ * This returns true if `--disable-telemetry` wasn't used, the product.json allows for telemetry, and we're not testing an extension
+ * If false telemetry is disabled throughout the product
  * @param productService
  * @param environmentService
  * @returns false - telemetry is completely disabled, true - telemetry is logged locally, but may not be sent
  */
 export function supportsTelemetry(productService: IProductService, environmentService: IEnvironmentService): boolean {
-	return !(environmentService.disableTelemetry || !productService.enableTelemetry);
+	return !(environmentService.disableTelemetry || !productService.enableTelemetry || environmentService.extensionTestsLocationURI);
 }
 
 /**
@@ -148,7 +148,7 @@ export interface Measurements {
 	[key: string]: number;
 }
 
-export function validateTelemetryData(data?: any): { properties: Properties, measurements: Measurements } {
+export function validateTelemetryData(data?: any): { properties: Properties; measurements: Measurements } {
 
 	const properties: Properties = Object.create(null);
 	const measurements: Measurements = Object.create(null);
@@ -168,8 +168,12 @@ export function validateTelemetryData(data?: any): { properties: Properties, mea
 			measurements[prop] = value ? 1 : 0;
 
 		} else if (typeof value === 'string') {
-			//enforce property value to be less than 1024 char, take the first 1024 char
-			properties[prop] = value.substring(0, 1023);
+			if (value.length > 8192) {
+				console.warn(`Telemetry property: ${prop} has been trimmed to 8192, the original length is ${value.length}`);
+			}
+			//enforce property value to be less than 8192 char, take the first 8192 char
+			// https://docs.microsoft.com/en-us/azure/azure-monitor/app/api-custom-events-metrics#limits
+			properties[prop] = value.substring(0, 8191);
 
 		} else if (typeof value !== 'undefined' && value !== null) {
 			properties[prop] = value;

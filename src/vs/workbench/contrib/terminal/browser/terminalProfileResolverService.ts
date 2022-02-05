@@ -9,14 +9,13 @@ import { withNullAsUndefined } from 'vs/base/common/types';
 import { IConfigurationService } from 'vs/platform/configuration/common/configuration';
 import { ILogService } from 'vs/platform/log/common/log';
 import { IWorkspaceContextService, IWorkspaceFolder } from 'vs/platform/workspace/common/workspace';
-import { IRemoteTerminalService } from 'vs/workbench/contrib/terminal/browser/terminal';
 import { IConfigurationResolverService } from 'vs/workbench/services/configurationResolver/common/configurationResolver';
 import { IHistoryService } from 'vs/workbench/services/history/common/history';
 import { IProcessEnvironment, OperatingSystem, OS } from 'vs/base/common/platform';
 import { IShellLaunchConfig, ITerminalProfile, ITerminalProfileObject, TerminalIcon, TerminalSettingId, TerminalSettingPrefix } from 'vs/platform/terminal/common/terminal';
 import { IShellLaunchConfigResolveOptions, ITerminalProfileResolverService, ITerminalProfileService } from 'vs/workbench/contrib/terminal/common/terminal';
 import * as path from 'vs/base/common/path';
-import { Codicon, iconRegistry } from 'vs/base/common/codicons';
+import { Codicon } from 'vs/base/common/codicons';
 import { IRemoteAgentService } from 'vs/workbench/services/remote/common/remoteAgentService';
 import { debounce } from 'vs/base/common/decorators';
 import { ThemeIcon } from 'vs/platform/theme/common/themeService';
@@ -28,6 +27,7 @@ import { INotificationService, IPromptChoice, NeverShowAgainScope } from 'vs/pla
 import { localize } from 'vs/nls';
 import { deepClone } from 'vs/base/common/objects';
 import { terminalProfileArgsMatch, isUriComponents } from 'vs/platform/terminal/common/terminalProfiles';
+import { ITerminalInstanceService } from 'vs/workbench/contrib/terminal/browser/terminal';
 
 export interface IProfileContextProvider {
 	getDefaultSystemShell: (remoteAuthority: string | undefined, os: OperatingSystem) => Promise<string>;
@@ -172,7 +172,7 @@ export abstract class BaseTerminalProfileResolverService implements ITerminalPro
 			return undefined;
 		}
 		if (typeof icon === 'string') {
-			return iconRegistry.get(icon);
+			return ThemeIcon.fromId(icon);
 		}
 		if (ThemeIcon.isThemeIcon(icon)) {
 			return icon;
@@ -181,7 +181,7 @@ export abstract class BaseTerminalProfileResolverService implements ITerminalPro
 			return URI.revive(icon);
 		}
 		if (typeof icon === 'object' && icon && 'light' in icon && 'dark' in icon) {
-			const castedIcon = (icon as { light: unknown, dark: unknown });
+			const castedIcon = (icon as { light: unknown; dark: unknown });
 			if ((URI.isUri(castedIcon.light) || isUriComponents(castedIcon.light)) && (URI.isUri(castedIcon.dark) || isUriComponents(castedIcon.dark))) {
 				return { light: URI.revive(castedIcon.light), dark: URI.revive(castedIcon.dark) };
 			}
@@ -323,7 +323,7 @@ export abstract class BaseTerminalProfileResolverService implements ITerminalPro
 		// Use automationProfile second
 		const automationProfile = this._configurationService.getValue(`terminal.integrated.automationProfile.${this._getOsKey(options.os)}`);
 		if (this._isValidAutomationProfile(automationProfile, options.os)) {
-			automationProfile.icon = automationProfile.icon ?? Codicon.tools;
+			automationProfile.icon = this._getCustomIcon(automationProfile.icon) || Codicon.tools;
 			return automationProfile;
 		}
 
@@ -514,7 +514,7 @@ export class BrowserTerminalProfileResolverService extends BaseTerminalProfileRe
 		@IConfigurationService configurationService: IConfigurationService,
 		@IHistoryService historyService: IHistoryService,
 		@ILogService logService: ILogService,
-		@IRemoteTerminalService remoteTerminalService: IRemoteTerminalService,
+		@ITerminalInstanceService terminalInstanceService: ITerminalInstanceService,
 		@ITerminalProfileService terminalProfileService: ITerminalProfileService,
 		@IWorkspaceContextService workspaceContextService: IWorkspaceContextService,
 		@IRemoteAgentService remoteAgentService: IRemoteAgentService,
@@ -524,17 +524,19 @@ export class BrowserTerminalProfileResolverService extends BaseTerminalProfileRe
 		super(
 			{
 				getDefaultSystemShell: async (remoteAuthority, os) => {
-					if (!remoteAuthority) {
+					const backend = terminalInstanceService.getBackend(remoteAuthority);
+					if (!remoteAuthority || !backend) {
 						// Just return basic values, this is only for serverless web and wouldn't be used
 						return os === OperatingSystem.Windows ? 'pwsh' : 'bash';
 					}
-					return remoteTerminalService.getDefaultSystemShell(os);
+					return backend.getDefaultSystemShell(os);
 				},
 				getEnvironment: async (remoteAuthority) => {
-					if (!remoteAuthority) {
+					const backend = terminalInstanceService.getBackend(remoteAuthority);
+					if (!remoteAuthority || !backend) {
 						return env;
 					}
-					return remoteTerminalService.getEnvironment();
+					return backend.getEnvironment();
 				}
 			},
 			configurationService,

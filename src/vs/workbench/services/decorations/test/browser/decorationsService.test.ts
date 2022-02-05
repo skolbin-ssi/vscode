@@ -11,7 +11,8 @@ import { Event, Emitter } from 'vs/base/common/event';
 import * as resources from 'vs/base/common/resources';
 import { CancellationToken } from 'vs/base/common/cancellation';
 import { mock } from 'vs/base/test/common/mock';
-import { IUriIdentityService } from 'vs/workbench/services/uriIdentity/common/uriIdentity';
+import { IUriIdentityService } from 'vs/platform/uriIdentity/common/uriIdentity';
+import { TestThemeService } from 'vs/platform/theme/test/common/testThemeService';
 
 suite('DecorationsService', function () {
 
@@ -24,7 +25,8 @@ suite('DecorationsService', function () {
 		service = new DecorationsService(
 			new class extends mock<IUriIdentityService>() {
 				override extUri = resources.extUri;
-			}
+			},
+			new TestThemeService()
 		);
 	});
 
@@ -299,5 +301,32 @@ suite('DecorationsService', function () {
 			gone = true;
 			emitter.fire([uri]);
 		});
+	});
+
+	test('FileDecorationProvider intermittently fails #133210', async function () {
+
+		const invokeOrder: string[] = [];
+
+		service.registerDecorationsProvider(new class {
+			label = 'Provider-1';
+			onDidChange = Event.None;
+			provideDecorations() {
+				invokeOrder.push(this.label);
+				return undefined;
+			}
+		});
+
+		service.registerDecorationsProvider(new class {
+			label = 'Provider-2';
+			onDidChange = Event.None;
+			provideDecorations() {
+				invokeOrder.push(this.label);
+				return undefined;
+			}
+		});
+
+		service.getDecoration(URI.parse('test://me/path'), false);
+
+		assert.deepStrictEqual(invokeOrder, ['Provider-2', 'Provider-1']);
 	});
 });

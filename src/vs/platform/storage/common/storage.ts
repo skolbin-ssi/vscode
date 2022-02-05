@@ -218,7 +218,7 @@ export interface IStorageTargetChangeEvent {
 }
 
 interface IKeyTargets {
-	[key: string]: StorageTarget
+	[key: string]: StorageTarget;
 }
 
 export interface IStorageServiceOptions {
@@ -245,7 +245,7 @@ export abstract class AbstractStorageService extends Disposable implements IStor
 	private readonly flushWhenIdleScheduler = this._register(new RunOnceScheduler(() => this.doFlushWhenIdle(), this.options.flushInterval));
 	private readonly runFlushWhenIdle = this._register(new MutableDisposable());
 
-	constructor(private options: IStorageServiceOptions = { flushInterval: AbstractStorageService.DEFAULT_FLUSH_INTERVAL }) {
+	constructor(private readonly options: IStorageServiceOptions = { flushInterval: AbstractStorageService.DEFAULT_FLUSH_INTERVAL }) {
 		super();
 	}
 
@@ -461,16 +461,33 @@ export abstract class AbstractStorageService extends Disposable implements IStor
 		return this.getBoolean(IS_NEW_KEY, scope) === true;
 	}
 
-	async flush(reason: WillSaveStateReason = WillSaveStateReason.NONE): Promise<void> {
+	async flush(reason = WillSaveStateReason.NONE): Promise<void> {
 
 		// Signal event to collect changes
 		this._onWillSaveState.fire({ reason });
 
-		// Await flush
-		await Promises.settled([
-			this.getStorage(StorageScope.GLOBAL)?.whenFlushed() ?? Promise.resolve(),
-			this.getStorage(StorageScope.WORKSPACE)?.whenFlushed() ?? Promise.resolve()
-		]);
+		const globalStorage = this.getStorage(StorageScope.GLOBAL);
+		const workspaceStorage = this.getStorage(StorageScope.WORKSPACE);
+
+		switch (reason) {
+
+			// Unspecific reason: just wait when data is flushed
+			case WillSaveStateReason.NONE:
+				await Promises.settled([
+					globalStorage?.whenFlushed() ?? Promise.resolve(),
+					workspaceStorage?.whenFlushed() ?? Promise.resolve()
+				]);
+				break;
+
+			// Shutdown: we want to flush as soon as possible
+			// and not hit any delays that might be there
+			case WillSaveStateReason.SHUTDOWN:
+				await Promises.settled([
+					globalStorage?.flush(0) ?? Promise.resolve(),
+					workspaceStorage?.flush(0) ?? Promise.resolve()
+				]);
+				break;
+		}
 	}
 
 	async logStorage(): Promise<void> {
@@ -547,7 +564,7 @@ export async function logStorage(global: Map<string, string>, workspace: Map<str
 	});
 
 	console.group(`Storage: Global (path: ${globalPath})`);
-	let globalValues: { key: string, value: string }[] = [];
+	let globalValues: { key: string; value: string }[] = [];
 	globalItems.forEach((value, key) => {
 		globalValues.push({ key, value });
 	});
@@ -557,7 +574,7 @@ export async function logStorage(global: Map<string, string>, workspace: Map<str
 	console.log(globalItemsParsed);
 
 	console.group(`Storage: Workspace (path: ${workspacePath})`);
-	let workspaceValues: { key: string, value: string }[] = [];
+	let workspaceValues: { key: string; value: string }[] = [];
 	workspaceItems.forEach((value, key) => {
 		workspaceValues.push({ key, value });
 	});

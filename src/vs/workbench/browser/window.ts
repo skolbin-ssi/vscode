@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { isSafari, setFullscreen } from 'vs/base/browser/browser';
-import { addDisposableListener, addDisposableThrottledListener, detectFullscreen, EventHelper, EventType, windowOpenNoOpenerWithSuccess, windowOpenNoOpener } from 'vs/base/browser/dom';
+import { addDisposableListener, addDisposableThrottledListener, detectFullscreen, EventHelper, EventType, windowOpenNoOpener, windowOpenPopup, windowOpenWithSuccess } from 'vs/base/browser/dom';
 import { DomEmitter } from 'vs/base/browser/event';
 import { timeout } from 'vs/base/common/async';
 import { Event } from 'vs/base/common/event';
@@ -18,7 +18,7 @@ import { IDialogService } from 'vs/platform/dialogs/common/dialogs';
 import { registerWindowDriver } from 'vs/platform/driver/browser/driver';
 import { ILabelService } from 'vs/platform/label/common/label';
 import { IOpenerService, matchesScheme } from 'vs/platform/opener/common/opener';
-import { IWorkbenchEnvironmentService } from 'vs/workbench/services/environment/common/environmentService';
+import { IBrowserWorkbenchEnvironmentService } from 'vs/workbench/services/environment/browser/environmentService';
 import { IWorkbenchLayoutService } from 'vs/workbench/services/layout/browser/layoutService';
 import { BrowserLifecycleService } from 'vs/workbench/services/lifecycle/browser/lifecycleService';
 import { ILifecycleService } from 'vs/workbench/services/lifecycle/common/lifecycle';
@@ -30,7 +30,7 @@ export class BrowserWindow extends Disposable {
 		@ILifecycleService private readonly lifecycleService: BrowserLifecycleService,
 		@IDialogService private readonly dialogService: IDialogService,
 		@ILabelService private readonly labelService: ILabelService,
-		@IWorkbenchEnvironmentService private readonly environmentService: IWorkbenchEnvironmentService,
+		@IBrowserWorkbenchEnvironmentService private readonly environmentService: IBrowserWorkbenchEnvironmentService,
 		@IWorkbenchLayoutService private readonly layoutService: IWorkbenchLayoutService
 	) {
 		super();
@@ -135,16 +135,20 @@ export class BrowserWindow extends Disposable {
 		// will trigger the `beforeunload`.
 		this.openerService.setDefaultExternalOpener({
 			openExternal: async (href: string) => {
-				if (this.environmentService.options?.externalURLOpener) {
-					if (await this.environmentService.options?.externalURLOpener.openExternal(href)) {
-						return true;
+				let isAllowedOpener = false;
+				if (this.environmentService.options?.openerAllowedExternalUrlPrefixes) {
+					for (const trustedPopupPrefix of this.environmentService.options.openerAllowedExternalUrlPrefixes) {
+						if (href.startsWith(trustedPopupPrefix)) {
+							isAllowedOpener = true;
+							break;
+						}
 					}
 				}
 
 				// HTTP(s): open in new window and deal with potential popup blockers
 				if (matchesScheme(href, Schemas.http) || matchesScheme(href, Schemas.https)) {
 					if (isSafari) {
-						const opened = windowOpenNoOpenerWithSuccess(href);
+						const opened = windowOpenWithSuccess(href, !isAllowedOpener);
 						if (!opened) {
 							const showResult = await this.dialogService.show(
 								Severity.Warning,
@@ -161,7 +165,9 @@ export class BrowserWindow extends Disposable {
 							);
 
 							if (showResult.choice === 0) {
-								windowOpenNoOpener(href);
+								isAllowedOpener
+									? windowOpenPopup(href)
+									: windowOpenNoOpener(href);
 							}
 
 							if (showResult.choice === 1) {
@@ -169,7 +175,9 @@ export class BrowserWindow extends Disposable {
 							}
 						}
 					} else {
-						windowOpenNoOpener(href);
+						isAllowedOpener
+							? windowOpenPopup(href)
+							: windowOpenNoOpener(href);
 					}
 				}
 

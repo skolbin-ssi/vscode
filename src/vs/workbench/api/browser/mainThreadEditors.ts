@@ -11,14 +11,14 @@ import { IBulkEditService, ResourceEdit, ResourceFileEdit, ResourceTextEdit } fr
 import { ICodeEditorService } from 'vs/editor/browser/services/codeEditorService';
 import { IRange } from 'vs/editor/common/core/range';
 import { ISelection } from 'vs/editor/common/core/selection';
-import { IDecorationOptions, IDecorationRenderOptions, ILineChange } from 'vs/editor/common/editorCommon';
-import { ISingleEditOperation } from 'vs/editor/common/model';
+import { IDecorationOptions, IDecorationRenderOptions } from 'vs/editor/common/editorCommon';
+import { ISingleEditOperation } from 'vs/editor/common/core/editOperation';
 import { CommandsRegistry } from 'vs/platform/commands/common/commands';
 import { ITextEditorOptions, IResourceEditorInput, EditorActivation, EditorResolution } from 'vs/platform/editor/common/editor';
 import { ServicesAccessor } from 'vs/platform/instantiation/common/instantiation';
 import { MainThreadDocumentsAndEditors } from 'vs/workbench/api/browser/mainThreadDocumentsAndEditors';
 import { MainThreadTextEditor } from 'vs/workbench/api/browser/mainThreadEditor';
-import { ExtHostContext, ExtHostEditorsShape, IApplyEditsOptions, IExtHostContext, ITextDocumentShowOptions, ITextEditorConfigurationUpdate, ITextEditorPositionData, IUndoStopOptions, MainThreadTextEditorsShape, TextEditorRevealType, IWorkspaceEditDto, WorkspaceEditType } from 'vs/workbench/api/common/extHost.protocol';
+import { ExtHostContext, ExtHostEditorsShape, IApplyEditsOptions, ITextDocumentShowOptions, ITextEditorConfigurationUpdate, ITextEditorPositionData, IUndoStopOptions, MainThreadTextEditorsShape, TextEditorRevealType, IWorkspaceEditDto, WorkspaceEditType } from 'vs/workbench/api/common/extHost.protocol';
 import { editorGroupToColumn, columnToEditorGroup, EditorGroupColumn } from 'vs/workbench/services/editor/common/editorGroupColumn';
 import { IEditorService } from 'vs/workbench/services/editor/common/editorService';
 import { IEditorGroupsService } from 'vs/workbench/services/editor/common/editorGroupsService';
@@ -28,6 +28,8 @@ import { revive } from 'vs/base/common/marshalling';
 import { ResourceNotebookCellEdit } from 'vs/workbench/contrib/bulkEdit/browser/bulkCellEdits';
 import { ExtensionIdentifier } from 'vs/platform/extensions/common/extensions';
 import { NotebookDto } from 'vs/workbench/api/browser/mainThreadNotebookDto';
+import { ILineChange } from 'vs/editor/common/diff/diffComputer';
+import { IExtHostContext } from 'vs/workbench/services/extensions/common/extHostCustomers';
 
 export function reviveWorkspaceEditDto2(data: IWorkspaceEditDto | undefined): ResourceEdit[] {
 	if (!data?.edits) {
@@ -55,9 +57,9 @@ export class MainThreadTextEditors implements MainThreadTextEditorsShape {
 	private readonly _proxy: ExtHostEditorsShape;
 	private readonly _documentsAndEditors: MainThreadDocumentsAndEditors;
 	private readonly _toDispose = new DisposableStore();
-	private _textEditorsListenersMap: { [editorId: string]: IDisposable[]; };
+	private _textEditorsListenersMap: { [editorId: string]: IDisposable[] };
 	private _editorPositionData: ITextEditorPositionData | null;
-	private _registeredDecorationTypes: { [decorationType: string]: boolean; };
+	private _registeredDecorationTypes: { [decorationType: string]: boolean };
 
 	constructor(
 		documentsAndEditors: MainThreadDocumentsAndEditors,
@@ -177,7 +179,8 @@ export class MainThreadTextEditors implements MainThreadTextEditorsShape {
 			const editorPanes = this._editorService.visibleEditorPanes;
 			for (let editorPane of editorPanes) {
 				if (mainThreadEditor.matches(editorPane)) {
-					return editorPane.group.closeEditor(editorPane.input);
+					await editorPane.group.closeEditor(editorPane.input);
+					return;
 				}
 			}
 		}

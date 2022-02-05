@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as glob from 'vs/base/common/glob';
-import { GroupIdentifier, ISaveOptions, IMoveResult, IRevertOptions, EditorInputCapabilities, Verbosity, IUntypedEditorInput, isResourceDiffEditorInput, isResourceSideBySideEditorInput } from 'vs/workbench/common/editor';
+import { GroupIdentifier, ISaveOptions, IMoveResult, IRevertOptions, EditorInputCapabilities, Verbosity, IUntypedEditorInput } from 'vs/workbench/common/editor';
 import { EditorInput } from 'vs/workbench/common/editor/editorInput';
 import { INotebookService, SimpleNotebookProviderInfo } from 'vs/workbench/contrib/notebook/common/notebookService';
 import { URI } from 'vs/base/common/uri';
@@ -13,7 +13,7 @@ import { IInstantiationService } from 'vs/platform/instantiation/common/instanti
 import { IFileDialogService } from 'vs/platform/dialogs/common/dialogs';
 import { INotebookEditorModelResolverService } from 'vs/workbench/contrib/notebook/common/notebookEditorModelResolverService';
 import { IDisposable, IReference } from 'vs/base/common/lifecycle';
-import { CellEditType, CellUri, IResolvedNotebookEditorModel } from 'vs/workbench/contrib/notebook/common/notebookCommon';
+import { CellEditType, IResolvedNotebookEditorModel } from 'vs/workbench/contrib/notebook/common/notebookCommon';
 import { ILabelService } from 'vs/platform/label/common/label';
 import { Schemas } from 'vs/base/common/network';
 import { mark } from 'vs/workbench/contrib/notebook/common/notebookPerformance';
@@ -23,7 +23,6 @@ import { IResourceEditorInput } from 'vs/platform/editor/common/editor';
 import { onUnexpectedError } from 'vs/base/common/errors';
 import { VSBuffer } from 'vs/base/common/buffer';
 import { IWorkingCopyIdentifier } from 'vs/workbench/services/workingCopy/common/workingCopy';
-import { IWorkingCopyBackupService } from 'vs/workbench/services/workingCopy/common/workingCopyBackup';
 
 export interface NotebookEditorInputOptions {
 	startDirty?: boolean;
@@ -54,7 +53,6 @@ export class NotebookEditorInput extends AbstractResourceEditorInput {
 		@INotebookEditorModelResolverService private readonly _notebookModelResolverService: INotebookEditorModelResolverService,
 		@IFileDialogService private readonly _fileDialogService: IFileDialogService,
 		@IInstantiationService private readonly _instantiationService: IInstantiationService,
-		@IWorkingCopyBackupService private readonly workingCopyBackupService: IWorkingCopyBackupService,
 		@ILabelService labelService: ILabelService,
 		@IFileService fileService: IFileService
 	) {
@@ -197,7 +195,7 @@ export class NotebookEditorInput extends AbstractResourceEditorInput {
 		return undefined;
 	}
 
-	private _move(_group: GroupIdentifier, newResource: URI): { editor: EditorInput; } {
+	private _move(_group: GroupIdentifier, newResource: URI): { editor: EditorInput } {
 		const editorInput = NotebookEditorInput.create(this._instantiationService, newResource, this.viewType);
 		return { editor: editorInput };
 	}
@@ -259,7 +257,6 @@ export class NotebookEditorInput extends AbstractResourceEditorInput {
 			], true, undefined, () => undefined, undefined, false);
 
 			if (this.options._workingCopy) {
-				await this.workingCopyBackupService.discardBackup(this.options._workingCopy);
 				this.options._backupId = undefined;
 				this.options._workingCopy = undefined;
 				this.options.startDirty = undefined;
@@ -284,12 +281,6 @@ export class NotebookEditorInput extends AbstractResourceEditorInput {
 		}
 		if (otherInput instanceof NotebookEditorInput) {
 			return this.viewType === otherInput.viewType && isEqual(this.resource, otherInput.resource);
-		}
-		if (isResourceDiffEditorInput(otherInput) || isResourceSideBySideEditorInput(otherInput)) {
-			return false;
-		}
-		if (otherInput.resource && otherInput.resource.scheme === Schemas.vscodeNotebookCell) {
-			return isEqual(this.resource, CellUri.parse(otherInput.resource)?.notebook);
 		}
 		return false;
 	}

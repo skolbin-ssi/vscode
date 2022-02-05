@@ -34,15 +34,15 @@ import { IDragAndDropData } from 'vs/base/browser/dnd';
 import { ElementsDragAndDropData } from 'vs/base/browser/ui/list/listView';
 import { fillEditorsDragData } from 'vs/workbench/browser/dnd';
 import { CancelablePromise, createCancelablePromise, Delayer } from 'vs/base/common/async';
-import { IModelService } from 'vs/editor/common/services/modelService';
+import { IModelService } from 'vs/editor/common/services/model';
 import { Range } from 'vs/editor/common/core/range';
-import { getCodeActions, CodeActionSet } from 'vs/editor/contrib/codeAction/codeAction';
-import { CodeActionKind } from 'vs/editor/contrib/codeAction/types';
+import { getCodeActions, CodeActionSet } from 'vs/editor/contrib/codeAction/browser/codeAction';
+import { CodeActionKind } from 'vs/editor/contrib/codeAction/browser/types';
 import { ITextModel } from 'vs/editor/common/model';
 import { IEditorService, ACTIVE_GROUP } from 'vs/workbench/services/editor/common/editorService';
-import { applyCodeAction } from 'vs/editor/contrib/codeAction/codeActionCommands';
+import { applyCodeAction } from 'vs/editor/contrib/codeAction/browser/codeActionCommands';
 import { SeverityIcon } from 'vs/platform/severityIcon/common/severityIcon';
-import { CodeActionTriggerType } from 'vs/editor/common/modes';
+import { CodeActionTriggerType } from 'vs/editor/common/languages';
 import { IOpenerService } from 'vs/platform/opener/common/opener';
 import { IFileService } from 'vs/platform/files/common/files';
 import { Progress } from 'vs/platform/progress/common/progress';
@@ -50,6 +50,7 @@ import { ActionViewItem } from 'vs/base/browser/ui/actionbar/actionViewItems';
 import { Codicon } from 'vs/base/common/codicons';
 import { registerIcon } from 'vs/platform/theme/common/iconRegistry';
 import { Link } from 'vs/platform/opener/browser/link';
+import { ILanguageFeaturesService } from 'vs/editor/common/services/languageFeatures';
 
 interface IResourceMarkersTemplateData {
 	resourceLabel: IResourceLabel;
@@ -361,7 +362,7 @@ class MarkerWidget extends Disposable {
 		for (let index = 0; index < (multiline ? lines.length : 1); index++) {
 			lastLineElement = dom.append(this.messageAndDetailsContainer, dom.$('.marker-message-line'));
 			const messageElement = dom.append(lastLineElement, dom.$('.marker-message'));
-			const highlightedLabel = new HighlightedLabel(messageElement, false);
+			const highlightedLabel = new HighlightedLabel(messageElement);
 			highlightedLabel.set(lines[index].length > 1000 ? `${lines[index].substring(0, 1000)}...` : lines[index], lineMatches[index]);
 			if (lines[index] === '') {
 				lastLineElement.style.height = `${VirtualDelegate.LINE_HEIGHT}px`;
@@ -374,19 +375,19 @@ class MarkerWidget extends Disposable {
 		parent.classList.add('details-container');
 
 		if (marker.source || marker.code) {
-			const source = new HighlightedLabel(dom.append(parent, dom.$('.marker-source')), false);
+			const source = new HighlightedLabel(dom.append(parent, dom.$('.marker-source')));
 			const sourceMatches = filterData && filterData.sourceMatches || [];
 			source.set(marker.source, sourceMatches);
 
 			if (marker.code) {
 				if (typeof marker.code === 'string') {
-					const code = new HighlightedLabel(dom.append(parent, dom.$('.marker-code')), false);
+					const code = new HighlightedLabel(dom.append(parent, dom.$('.marker-code')));
 					const codeMatches = filterData && filterData.codeMatches || [];
 					code.set(marker.code, codeMatches);
 				} else {
 					// TODO@sandeep: these widgets should be disposed
 					const container = dom.$('.marker-code');
-					const code = new HighlightedLabel(container, false);
+					const code = new HighlightedLabel(container);
 					new Link(parent, { href: marker.code.target.toString(), label: container, title: marker.code.target.toString() }, undefined, this._openerService);
 					const codeMatches = filterData && filterData.codeMatches || [];
 					code.set(marker.code.value, codeMatches);
@@ -414,14 +415,14 @@ export class RelatedInformationRenderer implements ITreeRenderer<RelatedInformat
 		dom.append(container, dom.$('.actions'));
 		dom.append(container, dom.$('.icon'));
 
-		data.resourceLabel = new HighlightedLabel(dom.append(container, dom.$('.related-info-resource')), false);
+		data.resourceLabel = new HighlightedLabel(dom.append(container, dom.$('.related-info-resource')));
 		data.lnCol = dom.append(container, dom.$('span.marker-line'));
 
 		const separator = dom.append(container, dom.$('span.related-info-resource-separator'));
 		separator.textContent = ':';
 		separator.style.paddingRight = '4px';
 
-		data.description = new HighlightedLabel(dom.append(container, dom.$('.marker-description')), false);
+		data.description = new HighlightedLabel(dom.append(container, dom.$('.marker-description')));
 		return data;
 	}
 
@@ -565,7 +566,8 @@ export class MarkerViewModel extends Disposable {
 		private readonly marker: Marker,
 		@IModelService private modelService: IModelService,
 		@IInstantiationService private instantiationService: IInstantiationService,
-		@IEditorService private readonly editorService: IEditorService
+		@IEditorService private readonly editorService: IEditorService,
+		@ILanguageFeaturesService private readonly languageFeaturesService: ILanguageFeaturesService,
 	) {
 		super();
 		this._register(toDisposable(() => {
@@ -626,7 +628,7 @@ export class MarkerViewModel extends Disposable {
 				if (model) {
 					if (!this.codeActionsPromise) {
 						this.codeActionsPromise = createCancelablePromise(cancellationToken => {
-							return getCodeActions(model, new Range(this.marker.range.startLineNumber, this.marker.range.startColumn, this.marker.range.endLineNumber, this.marker.range.endColumn), {
+							return getCodeActions(this.languageFeaturesService.codeActionProvider, model, new Range(this.marker.range.startLineNumber, this.marker.range.startColumn, this.marker.range.endLineNumber, this.marker.range.endColumn), {
 								type: CodeActionTriggerType.Invoke, filter: { include: CodeActionKind.QuickFix }
 							}, Progress.None, cancellationToken).then(actions => {
 								return this._register(actions);
@@ -693,7 +695,7 @@ export class MarkersViewModel extends Disposable {
 	private readonly _onDidChange: Emitter<Marker | undefined> = this._register(new Emitter<Marker | undefined>());
 	readonly onDidChange: Event<Marker | undefined> = this._onDidChange.event;
 
-	private readonly markersViewStates: Map<string, { viewModel: MarkerViewModel, disposables: IDisposable[] }> = new Map<string, { viewModel: MarkerViewModel, disposables: IDisposable[] }>();
+	private readonly markersViewStates: Map<string, { viewModel: MarkerViewModel; disposables: IDisposable[] }> = new Map<string, { viewModel: MarkerViewModel; disposables: IDisposable[] }>();
 	private readonly markersPerResource: Map<string, Marker[]> = new Map<string, Marker[]>();
 
 	private bulkUpdate: boolean = false;

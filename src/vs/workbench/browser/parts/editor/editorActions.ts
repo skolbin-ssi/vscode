@@ -6,7 +6,7 @@
 import { localize } from 'vs/nls';
 import { Action } from 'vs/base/common/actions';
 import { firstOrDefault } from 'vs/base/common/arrays';
-import { IEditorIdentifier, IEditorCommandsContext, CloseDirection, SaveReason, EditorsOrder, EditorInputCapabilities, IEditorFactoryRegistry, EditorExtensions, DEFAULT_EDITOR_ASSOCIATION, GroupIdentifier } from 'vs/workbench/common/editor';
+import { IEditorIdentifier, IEditorCommandsContext, CloseDirection, SaveReason, EditorsOrder, EditorInputCapabilities, DEFAULT_EDITOR_ASSOCIATION, GroupIdentifier, EditorResourceAccessor } from 'vs/workbench/common/editor';
 import { EditorInput } from 'vs/workbench/common/editor/editorInput';
 import { SideBySideEditorInput } from 'vs/workbench/common/editor/sideBySideEditorInput';
 import { IWorkbenchLayoutService, Parts } from 'vs/workbench/services/layout/browser/layoutService';
@@ -24,7 +24,6 @@ import { ItemActivation, IQuickInputService } from 'vs/platform/quickinput/commo
 import { AllEditorsByMostRecentlyUsedQuickAccess, ActiveGroupEditorsByMostRecentlyUsedQuickAccess, AllEditorsByAppearanceQuickAccess } from 'vs/workbench/browser/parts/editor/editorQuickAccess';
 import { Codicon } from 'vs/base/common/codicons';
 import { IFilesConfigurationService, AutoSaveMode } from 'vs/workbench/services/filesConfiguration/common/filesConfigurationService';
-import { Registry } from 'vs/platform/registry/common/platform';
 import { IEditorResolverService } from 'vs/workbench/services/editor/common/editorResolverService';
 import { isLinux, isNative, isWindows } from 'vs/base/common/platform';
 
@@ -460,13 +459,15 @@ export class CloseOneEditorAction extends Action {
 		if (typeof editorIndex === 'number') {
 			const editorAtIndex = group.getEditorByIndex(editorIndex);
 			if (editorAtIndex) {
-				return group.closeEditor(editorAtIndex);
+				await group.closeEditor(editorAtIndex);
+				return;
 			}
 		}
 
 		// Otherwise close active editor in group
 		if (group.activeEditor) {
-			return group.closeEditor(group.activeEditor);
+			await group.closeEditor(group.activeEditor);
+			return;
 		}
 	}
 }
@@ -501,7 +502,7 @@ export class RevertAndCloseEditorAction extends Action {
 				await this.editorService.revert({ editor, groupId: group.id }, { soft: true });
 			}
 
-			return group.closeEditor(editor);
+			await group.closeEditor(editor);
 		}
 	}
 }
@@ -526,7 +527,7 @@ export class CloseLeftEditorsInGroupAction extends Action {
 		}
 	}
 
-	private getTarget(context?: IEditorIdentifier): { editor: EditorInput | null, group: IEditorGroup | undefined } {
+	private getTarget(context?: IEditorIdentifier): { editor: EditorInput | null; group: IEditorGroup | undefined } {
 		if (context) {
 			return { editor: context.editor, group: this.editorGroupService.getGroup(context.groupId) };
 		}
@@ -1261,7 +1262,11 @@ export class NavigateForwardAction extends Action {
 	static readonly ID = 'workbench.action.navigateForward';
 	static readonly LABEL = localize('navigateNext', "Go Forward");
 
-	constructor(id: string, label: string, @IHistoryService private readonly historyService: IHistoryService) {
+	constructor(
+		id: string,
+		label: string,
+		@IHistoryService private readonly historyService: IHistoryService
+	) {
 		super(id, label);
 	}
 
@@ -1275,7 +1280,11 @@ export class NavigateBackwardsAction extends Action {
 	static readonly ID = 'workbench.action.navigateBack';
 	static readonly LABEL = localize('navigatePrevious', "Go Back");
 
-	constructor(id: string, label: string, @IHistoryService private readonly historyService: IHistoryService) {
+	constructor(
+		id: string,
+		label: string,
+		@IHistoryService private readonly historyService: IHistoryService
+	) {
 		super(id, label);
 	}
 
@@ -1284,31 +1293,39 @@ export class NavigateBackwardsAction extends Action {
 	}
 }
 
-export class NavigateToLastEditLocationAction extends Action {
-
-	static readonly ID = 'workbench.action.navigateToLastEditLocation';
-	static readonly LABEL = localize('navigateToLastEditLocation', "Go to Last Edit Location");
-
-	constructor(id: string, label: string, @IHistoryService private readonly historyService: IHistoryService) {
-		super(id, label);
-	}
-
-	override async run(): Promise<void> {
-		this.historyService.openLastEditLocation();
-	}
-}
-
 export class NavigateLastAction extends Action {
 
 	static readonly ID = 'workbench.action.navigateLast';
 	static readonly LABEL = localize('navigateLast', "Go Last");
 
-	constructor(id: string, label: string, @IHistoryService private readonly historyService: IHistoryService) {
+	constructor(
+		id: string,
+		label: string,
+		@IHistoryService private readonly historyService: IHistoryService
+	) {
 		super(id, label);
 	}
 
 	override async run(): Promise<void> {
 		this.historyService.last();
+	}
+}
+
+export class NavigateToLastEditLocationAction extends Action {
+
+	static readonly ID = 'workbench.action.navigateToLastEditLocation';
+	static readonly LABEL = localize('navigateToLastEditLocation', "Go to Last Edit Location");
+
+	constructor(
+		id: string,
+		label: string,
+		@IHistoryService private readonly historyService: IHistoryService
+	) {
+		super(id, label);
+	}
+
+	override async run(): Promise<void> {
+		this.historyService.openLastEditLocation();
 	}
 }
 
@@ -2070,16 +2087,12 @@ export class ToggleEditorTypeAction extends Action {
 			return;
 		}
 
-		const activeEditorResource = activeEditorPane.input.resource;
+		const activeEditorResource = EditorResourceAccessor.getCanonicalUri(activeEditorPane.input);
 		if (!activeEditorResource) {
 			return;
 		}
 
-		const options = activeEditorPane.options;
-		const group = activeEditorPane.group;
-
 		const editorIds = this.editorResolverService.getEditors(activeEditorResource).map(editor => editor.id).filter(id => id !== activeEditorPane.input.editorId);
-
 		if (editorIds.length === 0) {
 			return;
 		}
@@ -2088,10 +2101,14 @@ export class ToggleEditorTypeAction extends Action {
 		await this.editorService.replaceEditors([
 			{
 				editor: activeEditorPane.input,
-				replacement: activeEditorPane.input,
-				options: { ...options, override: editorIds[0] },
+				replacement: {
+					resource: activeEditorResource,
+					options: {
+						override: editorIds[0]
+					}
+				}
 			}
-		], group);
+		], activeEditorPane.group);
 	}
 }
 
@@ -2100,12 +2117,10 @@ export class ReOpenInTextEditorAction extends Action {
 	static readonly ID = 'workbench.action.reopenTextEditor';
 	static readonly LABEL = localize('workbench.action.reopenTextEditor', "Reopen Editor With Text Editor");
 
-	private readonly fileEditorFactory = Registry.as<IEditorFactoryRegistry>(EditorExtensions.EditorFactory).getFileEditorFactory();
-
 	constructor(
 		id: string,
 		label: string,
-		@IEditorService private readonly editorService: IEditorService,
+		@IEditorService private readonly editorService: IEditorService
 	) {
 		super(id, label);
 	}
@@ -2116,25 +2131,22 @@ export class ReOpenInTextEditorAction extends Action {
 			return;
 		}
 
-		const activeEditorResource = activeEditorPane.input.resource;
+		const activeEditorResource = EditorResourceAccessor.getCanonicalUri(activeEditorPane.input);
 		if (!activeEditorResource) {
 			return;
 		}
 
-		const options = activeEditorPane.options;
-		const group = activeEditorPane.group;
-
-		if (this.fileEditorFactory.isFileEditor(this.editorService.activeEditor)) {
-			return;
-		}
-
 		// Replace the current editor with the text editor
-		await group.replaceEditors([
+		await this.editorService.replaceEditors([
 			{
 				editor: activeEditorPane.input,
-				replacement: activeEditorPane.input,
-				options: { ...options, override: DEFAULT_EDITOR_ASSOCIATION.id },
+				replacement: {
+					resource: activeEditorResource,
+					options: {
+						override: DEFAULT_EDITOR_ASSOCIATION.id
+					}
+				}
 			}
-		]);
+		], activeEditorPane.group);
 	}
 }

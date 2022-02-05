@@ -9,7 +9,9 @@ import { URI, UriComponents } from 'vs/base/common/uri';
 import { ISandboxConfiguration } from 'vs/base/parts/sandbox/common/sandboxTypes';
 import { IConfigurationService } from 'vs/platform/configuration/common/configuration';
 import { NativeParsedArgs } from 'vs/platform/environment/common/argv';
+import { FileType } from 'vs/platform/files/common/files';
 import { LogLevel } from 'vs/platform/log/common/log';
+import { IPartsSplash } from 'vs/platform/theme/common/themeService';
 import { ISingleFolderWorkspaceIdentifier, IWorkspaceIdentifier } from 'vs/platform/workspaces/common/workspaces';
 
 export const WindowMinimumSize = {
@@ -183,17 +185,23 @@ export interface IPathData {
 		readonly startColumn: number;
 		readonly endLineNumber?: number;
 		readonly endColumn?: number;
-	}
+	};
 
 	// a hint that the file exists. if true, the
 	// file exists, if false it does not. with
-	// undefined the state is unknown.
+	// `undefined` the state is unknown.
 	readonly exists?: boolean;
 
-	// Specifies if the file should be only be opened if it exists
+	// a hint about the file type of this path.
+	// with `undefined` the type is unknown.
+	readonly type?: FileType;
+
+	// Specifies if the file should be only be opened
+	// if it exists
 	readonly openOnlyIfExists?: boolean;
 
-	// Specifies an optional id to override the editor used to edit the resource, e.g. custom editor.
+	// Specifies an optional id to override the editor
+	// used to edit the resource, e.g. custom editor.
 	readonly editorOverrideId?: string;
 }
 
@@ -247,31 +255,6 @@ export interface IOSConfiguration {
 	readonly hostname: string;
 }
 
-export interface IPartsSplash {
-	baseTheme: string;
-	colorInfo: {
-		background: string;
-		foreground: string | undefined;
-		editorBackground: string | undefined;
-		titleBarBackground: string | undefined;
-		activityBarBackground: string | undefined;
-		sideBarBackground: string | undefined;
-		statusBarBackground: string | undefined;
-		statusBarNoFolderBackground: string | undefined;
-		windowBorder: string | undefined;
-	}
-	layoutInfo: {
-		sideBarSide: string;
-		editorPartMinWidth: number;
-		titleBarHeight: number;
-		activityBarWidth: number;
-		sideBarWidth: number;
-		statusBarHeight: number;
-		windowBorder: boolean;
-		windowBorderRadius: string | undefined;
-	} | undefined
-}
-
 export interface INativeWindowConfiguration extends IWindowConfiguration, NativeParsedArgs, ISandboxConfiguration {
 	mainPid: number;
 
@@ -296,9 +279,6 @@ export interface INativeWindowConfiguration extends IWindowConfiguration, Native
 	accessibilitySupport?: boolean;
 	colorScheme: IColorScheme;
 	autoDetectHighContrast?: boolean;
-
-	legacyWatcher?: string; // TODO@bpasero remove me once watcher is settled
-	experimentalSandboxedFileService?: boolean; // TODO@bpasero remove me once sandbox is settled
 
 	perfMarks: PerformanceMark[];
 
