@@ -10,7 +10,7 @@ import { DisposableStore } from 'vs/base/common/lifecycle';
 import { marked } from 'vs/base/common/marked/marked';
 import { parse } from 'vs/base/common/marshalling';
 import { cloneAndChange } from 'vs/base/common/objects';
-import { isDefined, isEmptyObject, isNumber, isString, withNullAsUndefined } from 'vs/base/common/types';
+import { isDefined, isEmptyObject, isNumber, isString, isUndefinedOrNull, withNullAsUndefined } from 'vs/base/common/types';
 import { URI, UriComponents } from 'vs/base/common/uri';
 import { IURITransformer } from 'vs/base/common/uriIpc';
 import { RenderLineNumbersType } from 'vs/editor/common/config/editorOptions';
@@ -25,13 +25,14 @@ import { EditorResolution, ITextEditorOptions } from 'vs/platform/editor/common/
 import { IMarkerData, IRelatedInformation, MarkerSeverity, MarkerTag } from 'vs/platform/markers/common/markers';
 import { ProgressLocation as MainProgressLocation } from 'vs/platform/progress/common/progress';
 import * as extHostProtocol from 'vs/workbench/api/common/extHost.protocol';
-import { getPrivateApiFor, TestItemImpl } from 'vs/workbench/api/common/extHostTestingPrivateApi';
+import { getPrivateApiFor } from 'vs/workbench/api/common/extHostTestingPrivateApi';
 import { SaveReason } from 'vs/workbench/common/editor';
+import { IViewBadge } from 'vs/workbench/common/views';
 import * as notebooks from 'vs/workbench/contrib/notebook/common/notebookCommon';
 import { ICellRange } from 'vs/workbench/contrib/notebook/common/notebookRange';
 import * as search from 'vs/workbench/contrib/search/common/search';
-import { CoverageDetails, denamespaceTestTag, DetailType, ICoveredCount, IFileCoverage, ISerializedTestResults, ITestItem, ITestItemContext, ITestTag, namespaceTestTag, SerializedTestErrorMessage, SerializedTestResultItem, TestMessageType } from 'vs/workbench/contrib/testing/common/testCollection';
 import { TestId } from 'vs/workbench/contrib/testing/common/testId';
+import { CoverageDetails, denamespaceTestTag, DetailType, ICoveredCount, IFileCoverage, ISerializedTestResults, ITestErrorMessage, ITestItem, ITestTag, namespaceTestTag, TestMessageType, TestResultItem } from 'vs/workbench/contrib/testing/common/testTypes';
 import { EditorGroupColumn } from 'vs/workbench/services/editor/common/editorGroupColumn';
 import { ACTIVE_GROUP, SIDE_GROUP } from 'vs/workbench/services/editor/common/editorService';
 import type * as vscode from 'vscode';
@@ -148,7 +149,8 @@ export namespace DocumentSelector {
 				language: selector.language,
 				scheme: _transformScheme(selector.scheme, uriTransformer),
 				pattern: GlobPattern.from(selector.pattern) ?? undefined,
-				exclusive: selector.exclusive
+				exclusive: selector.exclusive,
+				notebookType: selector.notebookType
 			};
 		}
 
@@ -553,6 +555,15 @@ export namespace TextEdit {
 		const result = new types.TextEdit(Range.to(edit.range), edit.text);
 		result.newEol = (typeof edit.eol === 'undefined' ? undefined : EndOfLine.to(edit.eol))!;
 		return result;
+	}
+}
+
+export namespace SnippetTextEdit {
+	export function from(edit: vscode.SnippetTextEdit): languages.SnippetTextEdit {
+		return {
+			range: Range.from(edit.range),
+			snippet: edit.snippet.value
+		};
 	}
 }
 
@@ -1167,10 +1178,10 @@ export namespace InlayHint {
 		const res = new types.InlayHint(
 			Position.to(hint.position),
 			typeof hint.label === 'string' ? hint.label : hint.label.map(InlayHintLabelPart.to.bind(undefined, converter)),
-			InlayHintKind.to(hint.kind)
+			hint.kind && InlayHintKind.to(hint.kind)
 		);
+		res.textEdits = hint.textEdits && hint.textEdits.map(TextEdit.to);
 		res.tooltip = htmlContent.isMarkdownString(hint.tooltip) ? MarkdownString.to(hint.tooltip) : hint.tooltip;
-		res.command = hint.command && converter.fromInternal(hint.command);
 		res.paddingLeft = hint.paddingLeft;
 		res.paddingRight = hint.paddingRight;
 		return res;
@@ -1505,6 +1516,20 @@ export namespace NotebookCellExecutionSummary {
 	}
 }
 
+export namespace NotebookCellExecutionState {
+	export function to(state: notebooks.NotebookCellExecutionState): vscode.NotebookCellExecutionState {
+		if (state === notebooks.NotebookCellExecutionState.Executing) {
+			return types.NotebookCellExecutionState.Executing;
+		} else if (state === notebooks.NotebookCellExecutionState.Pending) {
+			return types.NotebookCellExecutionState.Pending;
+		} else if (state === notebooks.NotebookCellExecutionState.Unconfirmed) {
+			return types.NotebookCellExecutionState.Pending;
+		} else {
+			throw new Error(`Unknown state: ${state}`);
+		}
+	}
+}
+
 export namespace NotebookCellKind {
 	export function from(data: vscode.NotebookCellKind): notebooks.CellKind {
 		switch (data) {
@@ -1640,8 +1665,7 @@ export namespace NotebookExclusiveDocumentPattern {
 		if (!ep) {
 			return false;
 		}
-
-		return !!ep.include && !!ep.exclude;
+		return !isUndefinedOrNull(ep.include) && !isUndefinedOrNull(ep.exclude);
 	}
 }
 
@@ -1692,17 +1716,17 @@ export namespace NotebookRendererScript {
 }
 
 export namespace TestMessage {
-	export function from(message: vscode.TestMessage): SerializedTestErrorMessage {
+	export function from(message: vscode.TestMessage): ITestErrorMessage.Serialized {
 		return {
 			message: MarkdownString.fromStrict(message.message) || '',
 			type: TestMessageType.Error,
 			expected: message.expectedOutput,
 			actual: message.actualOutput,
-			location: message.location ? location.from(message.location) as any : undefined,
+			location: message.location && ({ range: Range.from(message.location.range), uri: message.location.uri }),
 		};
 	}
 
-	export function to(item: SerializedTestErrorMessage): vscode.TestMessage {
+	export function to(item: ITestErrorMessage.Serialized): vscode.TestMessage {
 		const message = new types.TestMessage(typeof item.message === 'string' ? item.message : MarkdownString.to(item.message));
 		message.actualOutput = item.actual;
 		message.expectedOutput = item.expected;
@@ -1720,21 +1744,22 @@ export namespace TestTag {
 export namespace TestItem {
 	export type Raw = vscode.TestItem;
 
-	export function from(item: TestItemImpl): ITestItem {
+	export function from(item: vscode.TestItem): ITestItem {
 		const ctrlId = getPrivateApiFor(item).controllerId;
 		return {
 			extId: TestId.fromExtHostTestItem(item, ctrlId).toString(),
 			label: item.label,
-			uri: item.uri,
+			uri: URI.revive(item.uri),
+			busy: false,
 			tags: item.tags.map(t => TestTag.namespace(ctrlId, t.id)),
-			range: Range.from(item.range) || null,
+			range: editorRange.Range.lift(Range.from(item.range)),
 			description: item.description || null,
 			sortText: item.sortText || null,
 			error: item.error ? (MarkdownString.fromStrict(item.error) || null) : null,
 		};
 	}
 
-	export function toPlain(item: ITestItem): Omit<vscode.TestItem, 'children' | 'invalidate' | 'discoverChildren'> {
+	export function toPlain(item: ITestItem.Serialized): vscode.TestItem {
 		return {
 			parent: undefined,
 			error: undefined,
@@ -1745,33 +1770,20 @@ export namespace TestItem {
 				const { tagId } = TestTag.denamespace(t);
 				return new types.TestTag(tagId);
 			}),
+			children: {
+				add: () => { },
+				delete: () => { },
+				forEach: () => { },
+				get: () => undefined,
+				replace: () => { },
+				size: 0,
+			},
 			range: Range.to(item.range || undefined),
-			invalidateResults: () => undefined,
 			canResolveChildren: false,
 			busy: false,
 			description: item.description || undefined,
 			sortText: item.sortText || undefined,
 		};
-	}
-
-	function to(item: ITestItem): TestItemImpl {
-		const testId = TestId.fromString(item.extId);
-		const testItem = new TestItemImpl(testId.controllerId, testId.localId, item.label, URI.revive(item.uri));
-		testItem.range = Range.to(item.range || undefined);
-		testItem.description = item.description || undefined;
-		testItem.sortText = item.sortText || undefined;
-		return testItem;
-	}
-
-	export function toItemFromContext(context: ITestItemContext): TestItemImpl {
-		let node: TestItemImpl | undefined;
-		for (const test of context.tests) {
-			const next = to(test.item);
-			getPrivateApiFor(next).parent = node;
-			node = next;
-		}
-
-		return node!;
 	}
 }
 
@@ -1786,7 +1798,7 @@ export namespace TestTag {
 }
 
 export namespace TestResults {
-	const convertTestResultItem = (item: SerializedTestResultItem, byInternalId: Map<string, SerializedTestResultItem>): vscode.TestResultSnapshot => {
+	const convertTestResultItem = (item: TestResultItem.Serialized, byInternalId: Map<string, TestResultItem.Serialized>): vscode.TestResultSnapshot => {
 		const snapshot: vscode.TestResultSnapshot = ({
 			...TestItem.toPlain(item.item),
 			parent: undefined,
@@ -1794,7 +1806,7 @@ export namespace TestResults {
 				state: t.state as number as types.TestResultState,
 				duration: t.duration,
 				messages: t.messages
-					.filter((m): m is SerializedTestErrorMessage => m.type === TestMessageType.Error)
+					.filter((m): m is ITestErrorMessage.Serialized => m.type === TestMessageType.Error)
 					.map(TestMessage.to),
 			})),
 			children: item.children
@@ -1811,8 +1823,8 @@ export namespace TestResults {
 	};
 
 	export function to(serialized: ISerializedTestResults): vscode.TestRunResult {
-		const roots: SerializedTestResultItem[] = [];
-		const byInternalId = new Map<string, SerializedTestResultItem>();
+		const roots: TestResultItem.Serialized[] = [];
+		const byInternalId = new Map<string, TestResultItem.Serialized>();
 		for (const item of serialized.items) {
 			byInternalId.set(item.item.extId, item);
 			if (serialized.request.targets.some(t => t.controllerId === item.controllerId && t.testIds.includes(item.item.extId))) {
@@ -1916,6 +1928,19 @@ export namespace TypeHierarchyItem {
 			range: Range.from(item.range),
 			selectionRange: Range.from(item.selectionRange),
 			tags: item.tags?.map(SymbolTag.from)
+		};
+	}
+}
+
+export namespace ViewBadge {
+	export function from(badge: vscode.ViewBadge | undefined): IViewBadge | undefined {
+		if (!badge) {
+			return undefined;
+		}
+
+		return {
+			value: badge.value,
+			tooltip: badge.tooltip
 		};
 	}
 }

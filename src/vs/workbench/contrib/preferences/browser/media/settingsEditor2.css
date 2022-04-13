@@ -8,8 +8,9 @@
 }
 
 .settings-editor {
-	padding: 11px 0px 0px;
 	overflow: hidden;
+	max-width: 1200px;
+	margin: auto;
 }
 
 .settings-editor:focus {
@@ -21,10 +22,11 @@
 	box-sizing: border-box;
 	margin: auto;
 	overflow: hidden;
+	margin-top: 11px;
 	padding-top: 3px;
 	padding-left: 24px;
 	padding-right: 24px;
-	max-width: 1000px;
+	max-width: 1200px;
 }
 
 .settings-editor > .settings-header > .search-container {
@@ -37,7 +39,7 @@
 
 .settings-editor > .settings-header > .search-container > .settings-count-widget {
 	position: absolute;
-	right: 35px;
+	right: 46px;
 	top: 0px;
 	margin: 4px 0px;
 }
@@ -53,7 +55,7 @@
 	top: 0;
 	right: 0;
 	height: 100%;
-	width: 30px;
+	width: 43px;
 }
 
 .settings-editor > .settings-header > .search-container > .settings-clear-widget .action-label {
@@ -123,17 +125,25 @@
 
 .settings-editor > .settings-body {
 	position: relative;
-	margin-top: 14px;
 }
 
 .settings-editor > .settings-body > .no-results-message {
 	display: none;
-	max-width: 1000px;
+	max-width: 1200px;
 	margin: auto;
 	margin-top: 20px;
 	padding-left: 24px;
 	padding-right: 24px;
 	box-sizing: border-box;
+}
+
+.settings-editor > .settings-body > .monaco-split-view2 {
+	margin-top: 14px;
+}
+
+.settings-editor > .settings-body .settings-toc-container,
+.settings-editor > .settings-body .settings-tree-container {
+	height: 100%;
 }
 
 .settings-editor.no-results > .settings-body .settings-toc-container,
@@ -201,20 +211,14 @@
 	pointer-events: none;
 	z-index: 10;
 	position: absolute;
-	top: 1px; /* Leave room for the settings list focus outline above */
 }
 
 .settings-editor > .settings-body .settings-toc-container .monaco-list {
-	width: 160px;
 	pointer-events: initial;
 }
 
 .settings-editor.no-toc-search > .settings-body .settings-toc-container,
 .settings-editor.narrow-width > .settings-body .settings-toc-container {
-	display: none;
-}
-
-.settings-editor > .settings-body .settings-toc-container .monaco-scrollable-element > .shadow {
 	display: none;
 }
 
@@ -250,13 +254,21 @@
 	position: relative;
 }
 
+/* Set padding for these two to zero for now, otherwise the ends of the lists get cut off. */
+.settings-editor > .settings-body .settings-tree-container .monaco-scrollable-element {
+	padding-top: 0px;
+}
+.settings-editor > .settings-body .settings-toc-container .monaco-scrollable-element {
+	padding-top: 0px;
+}
+
 .settings-editor > .settings-body .settings-toc-wrapper {
-	padding-left: 31px;
+	padding-left: 24px;
 }
 
 .settings-editor > .settings-body .settings-toc-wrapper {
 	height: 100%;
-	max-width: 1000px;
+	max-width: 1200px;
 	margin: auto;
 }
 
@@ -278,15 +290,15 @@
 }
 
 .settings-editor > .settings-body .settings-tree-container .monaco-list-row .monaco-tl-contents {
-	max-width: 1000px;
+	max-width: min(100%, 1200px); /* We don't want the widgets to be too long */
 	margin: auto;
 	box-sizing: border-box;
-	padding-left: 221px;
+	padding-left: 24px;
 	padding-right: 24px;
 	overflow: visible;
 }
 .settings-editor > .settings-body .settings-tree-container .monaco-list-row .monaco-tl-contents.group-title {
-	max-width: min(100%, 1000px); /* Cut off title if too long for window */
+	max-width: min(100%, 1200px); /* Cut off title if too long for window */
 }
 
 .settings-editor > .settings-body .settings-tree-container .settings-group-title-label,
@@ -337,6 +349,10 @@
 	padding-left: 1px;
 }
 
+.settings-editor > .settings-body .settings-tree-container .setting-item-contents .setting-item-title .setting-item-label .codicon {
+	vertical-align: text-top;
+}
+
 .settings-editor > .settings-body .settings-tree-container .setting-item-contents .setting-item-title .setting-item-overrides a.modified-scope {
 	text-decoration: underline;
 	cursor: pointer;
@@ -373,6 +389,7 @@
 }
 
 .settings-editor > .settings-body .settings-tree-container .setting-item-contents.is-deprecated .setting-item-deprecation-message .codicon {
+	color: inherit;
 	margin-right: 4px;
 }
 
@@ -414,7 +431,7 @@
 }
 
 .settings-editor > .settings-body .settings-tree-container .setting-item.setting-item-text .setting-item-validation-message {
-	width: 500px;
+	width: 420px;
 }
 
 .settings-editor > .settings-body .settings-tree-container .setting-item.setting-item-number .setting-item-validation-message {
@@ -496,7 +513,7 @@
 }
 
 .settings-editor > .settings-body .settings-tree-container .setting-item.setting-item-text .setting-item-control {
-	width: 500px;
+	width: 420px;
 }
 
 .settings-editor > .settings-body .settings-tree-container .setting-item.setting-item-enum .setting-item-value > .setting-item-control,

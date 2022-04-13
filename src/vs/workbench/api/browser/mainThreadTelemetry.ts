@@ -38,7 +38,7 @@ export class MainThreadTelemetry extends Disposable implements MainThreadTelemet
 			}));
 		}
 
-		this._proxy.$initializeTelemetryLevel(this.telemetryLevel);
+		this._proxy.$initializeTelemetryLevel(this.telemetryLevel, this._productService.enabledTelemetryLevels);
 	}
 
 	private get telemetryLevel(): TelemetryLevel {
@@ -55,7 +55,7 @@ export class MainThreadTelemetry extends Disposable implements MainThreadTelemet
 		this._telemetryService.publicLog(eventName, data);
 	}
 
-	$publicLog2<E extends ClassifiedEvent<T> = never, T extends GDPRClassification<T> = never>(eventName: string, data: StrictPropertyCheck<T, E>): void {
+	$publicLog2<E extends ClassifiedEvent<T> = never, T extends GDPRClassification<T> = never>(eventName: string, data?: StrictPropertyCheck<T, E>): void {
 		this.$publicLog(eventName, data as any);
 	}
 }

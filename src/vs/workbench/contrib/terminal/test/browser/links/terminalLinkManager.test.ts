@@ -8,6 +8,8 @@ import { equals } from 'vs/base/common/arrays';
 import { IEditorOptions } from 'vs/editor/common/config/editorOptions';
 import { IConfigurationService } from 'vs/platform/configuration/common/configuration';
 import { TestConfigurationService } from 'vs/platform/configuration/test/common/testConfigurationService';
+import { ContextMenuService } from 'vs/platform/contextview/browser/contextMenuService';
+import { IContextMenuService } from 'vs/platform/contextview/browser/contextView';
 import { TestInstantiationService } from 'vs/platform/instantiation/test/common/instantiationServiceMock';
 import { ILogService, NullLogService } from 'vs/platform/log/common/log';
 import { IStorageService } from 'vs/platform/storage/common/storage';
@@ -15,7 +17,7 @@ import { IThemeService } from 'vs/platform/theme/common/themeService';
 import { TestThemeService } from 'vs/platform/theme/test/common/testThemeService';
 import { IViewDescriptorService } from 'vs/workbench/common/views';
 import { IDetectedLinks, TerminalLinkManager } from 'vs/workbench/contrib/terminal/browser/links/terminalLinkManager';
-import { ITerminalCapabilityImplMap, ITerminalCapabilityStore, TerminalCapability } from 'vs/workbench/contrib/terminal/common/capabilities/capabilities';
+import { ITerminalCapabilityImplMap, ITerminalCapabilityStore, TerminalCapability } from 'vs/platform/terminal/common/capabilities/capabilities';
 import { ITerminalConfiguration, ITerminalProcessManager } from 'vs/workbench/contrib/terminal/common/terminal';
 import { TestViewDescriptorService } from 'vs/workbench/contrib/terminal/test/browser/xterm/xtermTerminal.test';
 import { TestStorageService } from 'vs/workbench/test/common/workbenchTestServices';
@@ -71,6 +73,7 @@ suite('TerminalLinkManager', () => {
 		viewDescriptorService = new TestViewDescriptorService();
 
 		instantiationService = new TestInstantiationService();
+		instantiationService.stub(IContextMenuService, instantiationService.createInstance(ContextMenuService));
 		instantiationService.stub(IConfigurationService, configurationService);
 		instantiationService.stub(ILogService, new NullLogService());
 		instantiationService.stub(IStorageService, new TestStorageService());

@@ -25,7 +25,7 @@ class WebAppInsightsAppender implements ITelemetryAppender {
 	private _telemetryCache: { eventName: string; data: any }[] = [];
 
 	constructor(private _eventPrefix: string, aiKey: string) {
-		const endpointUrl = 'https://vortex.data.microsoft.com/collect/v1';
+		const endpointUrl = 'https://mobile.events.data.microsoft.com/collect/v1';
 		import('@microsoft/applicationinsights-web').then(aiLibrary => {
 			this._aiClient = new aiLibrary.ApplicationInsights({
 				config: {
@@ -107,7 +107,7 @@ export class TelemetryService extends Disposable implements ITelemetryService {
 	declare readonly _serviceBrand: undefined;
 
 	private impl: ITelemetryService;
-	public readonly sendErrorTelemetry = false;
+	public readonly sendErrorTelemetry = true;
 
 	constructor(
 		@IBrowserWorkbenchEnvironmentService environmentService: IBrowserWorkbenchEnvironmentService,
@@ -124,11 +124,11 @@ export class TelemetryService extends Disposable implements ITelemetryService {
 			const telemetryProvider: ITelemetryAppender = remoteAgentService.getConnection() !== null ? { log: remoteAgentService.logTelemetry.bind(remoteAgentService), flush: remoteAgentService.flushTelemetry.bind(remoteAgentService) } : new WebAppInsightsAppender('monacoworkbench', productService.aiConfig?.asimovKey);
 			const config: ITelemetryServiceConfig = {
 				appenders: [new WebTelemetryAppender(telemetryProvider), new TelemetryLogAppender(loggerService, environmentService)],
-				commonProperties: resolveWorkbenchCommonProperties(storageService, productService.commit, productService.version, environmentService.remoteAuthority, productService.embedderIdentifier, environmentService.options && environmentService.options.resolveCommonTelemetryProperties),
-				sendErrorTelemetry: false,
+				commonProperties: resolveWorkbenchCommonProperties(storageService, productService.commit, productService.version, environmentService.remoteAuthority, productService.embedderIdentifier, productService.removeTelemetryMachineId, environmentService.options && environmentService.options.resolveCommonTelemetryProperties),
+				sendErrorTelemetry: this.sendErrorTelemetry,
 			};
 
-			this.impl = this._register(new BaseTelemetryService(config, configurationService));
+			this.impl = this._register(new BaseTelemetryService(config, configurationService, productService));
 		} else {
 			this.impl = NullTelemetryService;
 		}

@@ -90,7 +90,6 @@ const createVSCodeWebProductConfigurationPatcher = (product) => {
 		if (path.endsWith('vs/platform/product/common/product.js')) {
 			const productConfiguration = JSON.stringify({
 				...product,
-				extensionAllowedProposedApi: [...product.extensionAllowedProposedApi],
 				version,
 				commit,
 				date: buildDate
@@ -209,13 +208,6 @@ function packageTask(sourceFolderName, destinationFolderName) {
 			gulp.src('resources/server/code-512.png', { base: 'resources/server' })
 		);
 
-		// TODO@bpasero remove me in Feb
-		const legacyMain = es.merge(
-			gulp.src(sourceFolderName + '/vs/workbench/workbench.web.main.js').pipe(rename('out/vs/workbench/workbench.web.api.js')).pipe(replace('workbench.web.main', 'workbench.web.api')),
-			gulp.src(sourceFolderName + '/vs/workbench/workbench.web.main.css').pipe(rename('out/vs/workbench/workbench.web.api.css')),
-			gulp.src(sourceFolderName + '/vs/workbench/workbench.web.main.nls.js').pipe(rename('out/vs/workbench/workbench.web.api.nls.js')).pipe(replace('workbench.web.main', 'workbench.web.api'))
-		);
-
 		let all = es.merge(
 			packageJsonStream,
 			license,
@@ -223,8 +215,7 @@ function packageTask(sourceFolderName, destinationFolderName) {
 			deps,
 			favicon,
 			manifest,
-			pwaicons,
-			legacyMain
+			pwaicons
 		);
 
 		let result = all
@@ -238,12 +229,12 @@ function packageTask(sourceFolderName, destinationFolderName) {
 const compileWebExtensionsBuildTask = task.define('compile-web-extensions-build', task.series(
 	task.define('clean-web-extensions-build', util.rimraf('.build/web/extensions')),
 	task.define('bundle-web-extensions-build', () => extensions.packageLocalExtensionsStream(true).pipe(gulp.dest('.build/web'))),
-	task.define('bundle-marketplace-web-extensions-build', () => extensions.packageMarketplaceExtensionsStream(true).pipe(gulp.dest('.build/web'))),
+	task.define('bundle-marketplace-web-extensions-build', () => extensions.packageMarketplaceExtensionsStream(true, product.extensionsGallery?.serviceUrl).pipe(gulp.dest('.build/web'))),
 	task.define('bundle-web-extension-media-build', () => extensions.buildExtensionMedia(false, '.build/web/extensions')),
 ));
 gulp.task(compileWebExtensionsBuildTask);
 
-const dashed = (str) => (str ? `-${str}` : ``);
+const dashed = (/** @type {string} */ str) => (str ? `-${str}` : ``);
 
 ['', 'min'].forEach(minified => {
 	const sourceFolderName = `out-vscode-web${dashed(minified)}`;

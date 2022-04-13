@@ -22,7 +22,7 @@ import { LRUCache, Touch } from 'vs/base/common/map';
 import { IMarkerService } from 'vs/platform/markers/common/markers';
 import { ITelemetryService } from 'vs/platform/telemetry/common/telemetry';
 import { IConfigurationService, ConfigurationTarget } from 'vs/platform/configuration/common/configuration';
-import { IFileService, IFileStat } from 'vs/platform/files/common/files';
+import { IFileService, IFileStatWithPartialMetadata } from 'vs/platform/files/common/files';
 import { IExtensionService } from 'vs/workbench/services/extensions/common/extensions';
 import { CommandsRegistry, ICommandService } from 'vs/platform/commands/common/commands';
 import { ProblemMatcherRegistry, NamedProblemMatcher } from 'vs/workbench/contrib/tasks/common/problemMatcher';
@@ -41,7 +41,7 @@ import { IConfigurationResolverService } from 'vs/workbench/services/configurati
 import { IWorkspaceContextService, WorkbenchState, IWorkspaceFolder, IWorkspace, WorkspaceFolder } from 'vs/platform/workspace/common/workspace';
 
 import { ITextFileService } from 'vs/workbench/services/textfile/common/textfiles';
-import { IOutputService, IOutputChannel } from 'vs/workbench/contrib/output/common/output';
+import { IOutputService, IOutputChannel } from 'vs/workbench/services/output/common/output';
 
 import { ITerminalGroupService, ITerminalService } from 'vs/workbench/contrib/terminal/browser/terminal';
 import { ITerminalProfileResolverService } from 'vs/workbench/contrib/terminal/common/terminal';
@@ -1585,37 +1585,78 @@ export abstract class AbstractTaskService extends Disposable implements ITaskSer
 
 		let resolverData: Map<string, ResolverData> | undefined;
 
-		return {
-			resolve: async (uri: URI | string, identifier: string | TaskIdentifier | undefined) => {
-				if (resolverData === undefined) {
-					resolverData = new Map();
-					(grouped || await this.getGroupedTasks()).forEach((tasks, folder) => {
-						let data = resolverData!.get(folder);
-						if (!data) {
-							data = { label: new Map<string, Task>(), identifier: new Map<string, Task>(), taskIdentifier: new Map<string, Task>() };
-							resolverData!.set(folder, data);
-						}
-						for (let task of tasks) {
-							data.label.set(task._label, task);
-							if (task.configurationProperties.identifier) {
-								data.identifier.set(task.configurationProperties.identifier, task);
-							}
-							let keyedIdentifier = task.getDefinition(true);
-							if (keyedIdentifier !== undefined) {
-								data.taskIdentifier.set(keyedIdentifier._key, task);
-							}
-						}
-					});
-				}
-				let data = resolverData.get(typeof uri === 'string' ? uri : uri.toString());
-				if (!data || !identifier) {
-					return undefined;
+		async function quickResolve(that: AbstractTaskService, uri: URI | string, identifier: string | TaskIdentifier) {
+			const foundTasks = await that._findWorkspaceTasks((task: Task | ConfiguringTask): boolean => {
+				const taskUri = ((ConfiguringTask.is(task) || CustomTask.is(task)) ? task._source.config.workspaceFolder?.uri : undefined);
+				const originalUri = (typeof uri === 'string' ? uri : uri.toString());
+				if (taskUri?.toString() !== originalUri) {
+					return false;
 				}
 				if (Types.isString(identifier)) {
-					return data.label.get(identifier) || data.identifier.get(identifier);
+					return ((task._label === identifier) || (task.configurationProperties.identifier === identifier));
 				} else {
-					let key = TaskDefinition.createTaskIdentifier(identifier, console);
-					return key !== undefined ? data.taskIdentifier.get(key._key) : undefined;
+					const keyedIdentifier = task.getDefinition(true);
+					const searchIdentifier = TaskDefinition.createTaskIdentifier(identifier, console);
+					return (searchIdentifier && keyedIdentifier) ? (searchIdentifier._key === keyedIdentifier._key) : false;
+				}
+			});
+			if (foundTasks.length === 0) {
+				return undefined;
+			}
+			const task = foundTasks[0];
+			if (ConfiguringTask.is(task)) {
+				return that.tryResolveTask(task);
+			}
+			return task;
+		}
+
+		async function getResolverData(that: AbstractTaskService) {
+			if (resolverData === undefined) {
+				resolverData = new Map();
+				(grouped || await that.getGroupedTasks()).forEach((tasks, folder) => {
+					let data = resolverData!.get(folder);
+					if (!data) {
+						data = { label: new Map<string, Task>(), identifier: new Map<string, Task>(), taskIdentifier: new Map<string, Task>() };
+						resolverData!.set(folder, data);
+					}
+					for (let task of tasks) {
+						data.label.set(task._label, task);
+						if (task.configurationProperties.identifier) {
+							data.identifier.set(task.configurationProperties.identifier, task);
+						}
+						let keyedIdentifier = task.getDefinition(true);
+						if (keyedIdentifier !== undefined) {
+							data.taskIdentifier.set(keyedIdentifier._key, task);
+						}
+					}
+				});
+			}
+			return resolverData;
+		}
+
+		async function fullResolve(that: AbstractTaskService, uri: URI | string, identifier: string | TaskIdentifier) {
+			const allResolverData = await getResolverData(that);
+			let data = allResolverData.get(typeof uri === 'string' ? uri : uri.toString());
+			if (!data) {
+				return undefined;
+			}
+			if (Types.isString(identifier)) {
+				return data.label.get(identifier) || data.identifier.get(identifier);
+			} else {
+				let key = TaskDefinition.createTaskIdentifier(identifier, console);
+				return key !== undefined ? data.taskIdentifier.get(key._key) : undefined;
+			}
+		}
+
+		return {
+			resolve: async (uri: URI | string, identifier: string | TaskIdentifier | undefined) => {
+				if (!identifier) {
+					return undefined;
+				}
+				if ((resolverData === undefined) && (grouped === undefined)) {
+					return (await quickResolve(this, uri, identifier)) ?? fullResolve(this, uri, identifier);
+				} else {
+					return fullResolve(this, uri, identifier);
 				}
 			}
 		};
@@ -1659,7 +1700,10 @@ export abstract class AbstractTaskService extends Disposable implements ITaskSer
 			const taskFolder = task.getWorkspaceFolder();
 			const taskIdentifier = task.configurationProperties.identifier;
 			// Since we save before running tasks, the task may have changed as part of the save.
-			taskToRun = ((taskFolder && taskIdentifier) ? await this.getTask(taskFolder, taskIdentifier) : task) ?? task;
+			// However, if the TaskRunSource is not User, then we shouldn't try to fetch the task again
+			// since this can cause a new'd task to get overwritten with a provided task.
+			taskToRun = ((taskFolder && taskIdentifier && (runSource === TaskRunSource.User))
+				? await this.getTask(taskFolder, taskIdentifier) : task) ?? task;
 		}
 		await ProblemMatcherRegistry.onReady();
 		let executeResult = this.getTaskSystem().run(taskToRun, resolver);
@@ -1667,13 +1711,6 @@ export abstract class AbstractTaskService extends Disposable implements ITaskSer
 	}
 
 	private async handleExecuteResult(executeResult: ITaskExecuteResult, runSource?: TaskRunSource): Promise<ITaskSummary> {
-		if (executeResult.task.taskLoadMessages && executeResult.task.taskLoadMessages.length > 0) {
-			executeResult.task.taskLoadMessages.forEach(loadMessage => {
-				this._outputChannel.append(loadMessage + '\n');
-			});
-			this.showOutput();
-		}
-
 		if (runSource === TaskRunSource.User) {
 			await this.setRecentlyUsedTask(executeResult.task);
 		}
@@ -1744,7 +1781,7 @@ export abstract class AbstractTaskService extends Disposable implements ITaskSer
 			this.modelService, this.configurationResolverService, this.telemetryService,
 			this.contextService, this.environmentService,
 			AbstractTaskService.OutputChannelId, this.fileService, this.terminalProfileResolverService,
-			this.pathService, this.viewDescriptorService, this.logService, this.configurationService,
+			this.pathService, this.viewDescriptorService, this.logService, this.configurationService, this.notificationService,
 			this,
 			(workspaceFolder: IWorkspaceFolder | undefined) => {
 				if (workspaceFolder) {
@@ -2753,13 +2790,13 @@ export abstract class AbstractTaskService extends Disposable implements ITaskSer
 			if (buildTasks.length === 1) {
 				const buildTask = buildTasks[0];
 				if (ConfiguringTask.is(buildTask)) {
-					this.tryResolveTask(buildTask).then(resolvedTask => {
+					return this.tryResolveTask(buildTask).then(resolvedTask => {
 						runSingleBuildTask(resolvedTask, undefined, this);
 					});
 				} else {
 					runSingleBuildTask(buildTask, undefined, this);
+					return;
 				}
-				return;
 			}
 
 			return this.getTasksForGroup(TaskGroup.Build).then((tasks) => {
@@ -2979,7 +3016,7 @@ export abstract class AbstractTaskService extends Disposable implements ITaskSer
 
 	private openTaskFile(resource: URI, taskSource: string) {
 		let configFileCreated = false;
-		this.fileService.resolve(resource).then((stat) => stat, () => undefined).then(async (stat) => {
+		this.fileService.stat(resource).then((stat) => stat, () => undefined).then(async (stat) => {
 			const fileExists: boolean = !!stat;
 			const configValue = this.configurationService.inspect<TaskConfig.ExternalTaskRunnerConfiguration>('tasks');
 			let tasksExistInFile: boolean;
@@ -3096,8 +3133,8 @@ export abstract class AbstractTaskService extends Disposable implements ITaskSer
 			taskPromise = Promise.resolve(new TaskMap());
 		}
 
-		let stats = this.contextService.getWorkspace().folders.map<Promise<IFileStat | undefined>>((folder) => {
-			return this.fileService.resolve(folder.toResource('.vscode/tasks.json')).then(stat => stat, () => undefined);
+		let stats = this.contextService.getWorkspace().folders.map<Promise<IFileStatWithPartialMetadata | undefined>>((folder) => {
+			return this.fileService.stat(folder.toResource('.vscode/tasks.json')).then(stat => stat, () => undefined);
 		});
 
 		let createLabel = nls.localize('TaskService.createJsonFile', 'Create tasks.json file from template');

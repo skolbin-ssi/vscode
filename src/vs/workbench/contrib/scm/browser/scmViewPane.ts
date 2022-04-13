@@ -1507,7 +1507,7 @@ abstract class SetSortKeyAction extends ViewAction<SCMViewPane>  {
 	constructor(private sortKey: ViewModelSortKey, title: string) {
 		super({
 			id: `workbench.scm.action.setSortKey.${sortKey}`,
-			title: title,
+			title,
 			viewId: VIEW_PANE_ID,
 			f1: false,
 			toggled: ContextKeys.ViewModelSortKey.isEqualTo(sortKey),
@@ -2383,7 +2383,7 @@ export class SCMViewPane extends ViewPane {
 	}
 }
 
-export const scmProviderSeparatorBorderColor = registerColor('scm.providerBorder', { dark: '#454545', light: '#C8C8C8', hc: contrastBorder }, localize('scm.providerBorder', "SCM Provider separator border."));
+export const scmProviderSeparatorBorderColor = registerColor('scm.providerBorder', { dark: '#454545', light: '#C8C8C8', hcDark: contrastBorder, hcLight: contrastBorder }, localize('scm.providerBorder', "SCM Provider separator border."));
 
 registerThemingParticipant((theme, collector) => {
 	const inputBackgroundColor = theme.getColor(inputBackground);

@@ -29,7 +29,7 @@ import { ITelemetryService } from 'vs/platform/telemetry/common/telemetry';
 import { IConfigurationResolverService } from 'vs/workbench/services/configurationResolver/common/configurationResolver';
 import { ITerminalProfileResolverService, TERMINAL_VIEW_ID } from 'vs/workbench/contrib/terminal/common/terminal';
 import { ITerminalService, ITerminalInstance, ITerminalGroupService } from 'vs/workbench/contrib/terminal/browser/terminal';
-import { IOutputService } from 'vs/workbench/contrib/output/common/output';
+import { IOutputService } from 'vs/workbench/services/output/common/output';
 import { StartStopProblemCollector, WatchingProblemCollector, ProblemCollectorEventKind, ProblemHandlingStrategy } from 'vs/workbench/contrib/tasks/common/problemCollectors';
 import {
 	Task, CustomTask, ContributedTask, RevealKind, CommandOptions, ShellConfiguration, RuntimeType, PanelKind,
@@ -51,6 +51,7 @@ import { TerminalProcessExtHostProxy } from 'vs/workbench/contrib/terminal/brows
 import { TaskTerminalStatus } from 'vs/workbench/contrib/tasks/browser/taskTerminalStatus';
 import { ITaskService } from 'vs/workbench/contrib/tasks/common/taskService';
 import { IPaneCompositePartService } from 'vs/workbench/services/panecomposite/browser/panecomposite';
+import { INotificationService } from 'vs/platform/notification/common/notification';
 
 interface TerminalData {
 	terminal: ITerminalInstance;
@@ -222,6 +223,7 @@ export class TerminalTaskSystem extends Disposable implements ITaskSystem {
 		private viewDescriptorService: IViewDescriptorService,
 		private logService: ILogService,
 		private configurationService: IConfigurationService,
+		private notificationService: INotificationService,
 		taskService: ITaskService,
 		taskSystemInfoResolver: TaskSystemInfoResolver,
 	) {
@@ -304,6 +306,21 @@ export class TerminalTaskSystem extends Disposable implements ITaskSystem {
 			return result;
 		} else {
 			return undefined;
+		}
+	}
+
+	private showTaskLoadErrors(task: Task) {
+		if (task.taskLoadMessages && task.taskLoadMessages.length > 0) {
+			task.taskLoadMessages.forEach(loadMessage => {
+				this.log(loadMessage + '\n');
+			});
+			const openOutput = 'Show Output';
+			this.notificationService.prompt(Severity.Warning,
+				nls.localize('TerminalTaskSystem.taskLoadReporting', "There are issues with task \"{0}\". See the output for more details.",
+					task._label), [{
+						label: openOutput,
+						run: () => this.showOutput()
+					}]);
 		}
 	}
 
@@ -480,6 +497,8 @@ export class TerminalTaskSystem extends Disposable implements ITaskSystem {
 			this.showDependencyCycleMessage(task);
 			return {};
 		}
+
+		this.showTaskLoadErrors(task);
 
 		alreadyResolved = alreadyResolved ?? new Map<string, string>();
 		let promises: Promise<ITaskSummary>[] = [];
@@ -1355,7 +1374,8 @@ export class TerminalTaskSystem extends Disposable implements ITaskSystem {
 	}
 
 	private buildShellCommandLine(platform: Platform.Platform, shellExecutable: string, shellOptions: ShellConfiguration | undefined, command: CommandString, originalCommand: CommandString | undefined, args: CommandString[]): string {
-		let shellQuoteOptions = this.getQuotingOptions(shellExecutable, shellOptions, platform);
+		let basename = path.parse(shellExecutable).name.toLowerCase();
+		let shellQuoteOptions = this.getQuotingOptions(basename, shellOptions, platform);
 
 		function needsQuotes(value: string): boolean {
 			if (value.length >= 2) {
@@ -1442,9 +1462,9 @@ export class TerminalTaskSystem extends Disposable implements ITaskSystem {
 		let commandLine = result.join(' ');
 		// There are special rules quoted command line in cmd.exe
 		if (platform === Platform.Platform.Windows) {
-			if (shellExecutable === 'cmd' && commandQuoted && argQuoted) {
+			if (basename === 'cmd' && commandQuoted && argQuoted) {
 				commandLine = '"' + commandLine + '"';
-			} else if ((shellExecutable === 'powershell' || shellExecutable === 'pwsh') && commandQuoted) {
+			} else if ((basename === 'powershell' || basename === 'pwsh') && commandQuoted) {
 				commandLine = '& ' + commandLine;
 			}
 		}

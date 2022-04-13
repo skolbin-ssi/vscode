@@ -13,7 +13,7 @@ import { terminalStrings } from 'vs/workbench/contrib/terminal/common/terminalSt
 import { IBufferCell, IBufferLine, Terminal } from 'xterm';
 
 // This is intentionally not localized currently as it must match the text in the shell script
-const linkText = 'Shell integration activated!';
+const linkText = 'Shell integration activated';
 const linkCodes = new Uint8Array(linkText.split('').map(e => e.charCodeAt(0)));
 
 export class TerminalShellIntegrationLinkDetector implements ITerminalLinkDetector {
@@ -51,6 +51,9 @@ export class TerminalShellIntegrationLinkDetector implements ITerminalLinkDetect
 	}
 
 	private _matches(lines: IBufferLine[]): boolean {
+		if (lines.length < linkCodes.length) {
+			return false;
+		}
 		let cell: IBufferCell | undefined;
 		for (let i = 0; i < linkCodes.length; i++) {
 			cell = lines[Math.floor(i / this.xterm.cols)].getCell(i % this.xterm.cols, cell);
@@ -62,6 +65,6 @@ export class TerminalShellIntegrationLinkDetector implements ITerminalLinkDetect
 	}
 
 	private async _hideMessage() {
-		await this._configurationService.updateValue(TerminalSettingId.ShowShellIntegrationWelcome, false);
+		await this._configurationService.updateValue(TerminalSettingId.ShellIntegrationShowWelcome, false);
 	}
 }

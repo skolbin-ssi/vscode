@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { flatten, isNonEmptyArray } from 'vs/base/common/arrays';
+import { isNonEmptyArray } from 'vs/base/common/arrays';
 import { onUnexpectedError } from 'vs/base/common/errors';
 import { Emitter, Event } from 'vs/base/common/event';
 import { combinedDisposable, DisposableStore, IDisposable, toDisposable } from 'vs/base/common/lifecycle';
@@ -43,7 +43,7 @@ abstract class MainThreadKernel implements INotebookKernel {
 	}
 
 	public get preloadProvides() {
-		return flatten(this.preloads.map(p => p.provides));
+		return this.preloads.map(p => p.provides).flat();
 	}
 
 	constructor(data: INotebookKernelDto2, private _languageService: ILanguageService) {
@@ -248,6 +248,7 @@ export class MainThreadNotebookKernels implements MainThreadNotebookKernelsShape
 	$createExecution(handle: number, controllerId: string, rawUri: UriComponents, cellHandle: number): void {
 		const uri = URI.revive(rawUri);
 		const execution = this._notebookExecutionStateService.createCellExecution(controllerId, uri, cellHandle);
+		execution.confirm();
 		this._executions.set(handle, execution);
 	}
 

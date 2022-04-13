@@ -16,7 +16,7 @@ import * as nls from 'vs/nls';
 import { IContextKey, IContextKeyService } from 'vs/platform/contextkey/common/contextkey';
 import { IDialogService } from 'vs/platform/dialogs/common/dialogs';
 import { IInstantiationService } from 'vs/platform/instantiation/common/instantiation';
-import { ICreateContributedTerminalProfileOptions, IShellLaunchConfig, ITerminalLaunchError, ITerminalsLayoutInfo, ITerminalsLayoutInfoById, TerminalLocation, TerminalLocationString } from 'vs/platform/terminal/common/terminal';
+import { ICreateContributedTerminalProfileOptions, IShellLaunchConfig, ITerminalLaunchError, ITerminalsLayoutInfo, ITerminalsLayoutInfoById, TerminalLocation, TerminalLocationString, TitleEventSource } from 'vs/platform/terminal/common/terminal';
 import { iconForeground } from 'vs/platform/theme/common/colorRegistry';
 import { getIconRegistry } from 'vs/platform/theme/common/iconRegistry';
 import { ColorScheme } from 'vs/platform/theme/common/theme';
@@ -141,6 +141,8 @@ export class TerminalService implements ITerminalService {
 	get onDidRegisterProcessSupport(): Event<void> { return this._onDidRegisterProcessSupport.event; }
 	private readonly _onDidChangeConnectionState = new Emitter<void>();
 	get onDidChangeConnectionState(): Event<void> { return this._onDidChangeConnectionState.event; }
+	private readonly _onDidRequestHideFindWidget = new Emitter<void>();
+	get onDidRequestHideFindWidget(): Event<void> { return this._onDidRequestHideFindWidget.event; }
 
 	constructor(
 		@IContextKeyService private _contextKeyService: IContextKeyService,
@@ -296,7 +298,9 @@ export class TerminalService implements ITerminalService {
 			this._onDidFocusInstance.fire(instance);
 			this._evaluateActiveInstance(host, instance);
 		});
-		host.onDidChangeInstanceCapability(this._onDidChangeInstanceCapability.fire, this.onDidChangeInstanceCapability);
+		host.onDidChangeInstanceCapability((instance) => {
+			this._onDidChangeInstanceCapability.fire(instance);
+		});
 		this._hostActiveTerminals.set(host, undefined);
 	}
 
@@ -637,15 +641,19 @@ export class TerminalService implements ITerminalService {
 
 	@debounce(500)
 	private _updateTitle(instance?: ITerminalInstance): void {
-		if (!this.configHelper.config.enablePersistentSessions || !instance || !instance.persistentProcessId || !instance.title) {
+		if (!this.configHelper.config.enablePersistentSessions || !instance || !instance.persistentProcessId || !instance.title || instance.isDisposed) {
 			return;
 		}
-		this._primaryBackend?.updateTitle(instance.persistentProcessId, instance.title, instance.titleSource);
+		if (instance.staticTitle) {
+			this._primaryBackend?.updateTitle(instance.persistentProcessId, instance.staticTitle, TitleEventSource.Api);
+		} else {
+			this._primaryBackend?.updateTitle(instance.persistentProcessId, instance.title, instance.titleSource);
+		}
 	}
 
 	@debounce(500)
 	private _updateIcon(instance?: ITerminalInstance): void {
-		if (!this.configHelper.config.enablePersistentSessions || !instance || !instance.persistentProcessId || !instance.icon) {
+		if (!this.configHelper.config.enablePersistentSessions || !instance || !instance.persistentProcessId || !instance.icon || instance.isDisposed) {
 			return;
 		}
 		this._primaryBackend?.updateIcon(instance.persistentProcessId, instance.icon, instance.color);
@@ -714,6 +722,7 @@ export class TerminalService implements ITerminalService {
 		}
 		sourceGroup.removeInstance(source);
 		this._terminalEditorService.openEditor(source);
+		this._onDidRequestHideFindWidget.fire();
 	}
 
 	async moveToTerminalView(source?: ITerminalInstance, target?: ITerminalInstance, side?: 'before' | 'after'): Promise<void> {
@@ -760,6 +769,7 @@ export class TerminalService implements ITerminalService {
 		this._onDidChangeInstances.fire();
 		this._onDidChangeActiveGroup.fire(this._terminalGroupService.activeGroup);
 		this._terminalGroupService.showPanel(true);
+		this._onDidRequestHideFindWidget.fire();
 	}
 
 	protected _initInstanceListeners(instance: ITerminalInstance): void {
