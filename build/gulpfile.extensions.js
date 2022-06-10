@@ -60,6 +60,7 @@ const compilations = [
 	'npm/tsconfig.json',
 	'php-language-features/tsconfig.json',
 	'search-result/tsconfig.json',
+	'references-view/tsconfig.json',
 	'simple-browser/tsconfig.json',
 	'typescript-language-features/test-workspace/tsconfig.json',
 	'typescript-language-features/tsconfig.json',
@@ -90,7 +91,7 @@ const tasks = compilations.map(function (tsconfigFile) {
 	const baseUrl = getBaseUrl(out);
 
 	let headerId, headerOut;
-	let index = relativeDirname.indexOf('/');
+	const index = relativeDirname.indexOf('/');
 	if (index < 0) {
 		headerId = 'vscode.' + relativeDirname;
 		headerOut = 'out';
@@ -101,7 +102,7 @@ const tasks = compilations.map(function (tsconfigFile) {
 
 	function createPipeline(build, emitError) {
 		const nlsDev = require('vscode-nls-dev');
-		const tsb = require('gulp-tsb');
+		const tsb = require('./lib/tsb');
 		const sourcemaps = require('gulp-sourcemaps');
 
 		const reporter = createReporter('extensions');
@@ -109,7 +110,7 @@ const tasks = compilations.map(function (tsconfigFile) {
 		overrideOptions.inlineSources = Boolean(build);
 		overrideOptions.base = path.dirname(absolutePath);
 
-		const compilation = tsb.create(absolutePath, overrideOptions, false, err => reporter(err.toString()));
+		const compilation = tsb.create(absolutePath, overrideOptions, { verbose: false }, err => reporter(err.toString()));
 
 		const pipeline = function () {
 			const input = es.through();

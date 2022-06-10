@@ -80,7 +80,7 @@ Registry.as<IQuickAccessRegistry>(QuickAccessExtensions.Quickaccess).registerQui
 	prefix: StartDebugQuickAccessProvider.PREFIX,
 	contextKey: 'inLaunchConfigurationsPicker',
 	placeholder: nls.localize('startDebugPlaceholder', "Type the name of a launch configuration to run."),
-	helpEntries: [{ description: nls.localize('startDebuggingHelp', "Start Debugging"), needsEditor: false }]
+	helpEntries: [{ description: nls.localize('startDebuggingHelp', "Start Debugging"), commandId: SELECT_AND_START_ID }]
 });
 
 
@@ -511,6 +511,11 @@ configurationRegistry.registerConfiguration({
 			description: nls.localize('debug.focusWindowOnBreak', "Controls whether the workbench window should be focused when the debugger breaks."),
 			default: true
 		},
+		'debug.focusEditorOnBreak': {
+			type: 'boolean',
+			description: nls.localize('debug.focusEditorOnBreak', "Controls whether the editor should be focused when the debugger breaks."),
+			default: true
+		},
 		'debug.onTaskErrors': {
 			enum: ['debugAnyway', 'showErrors', 'prompt', 'abort'],
 			enumDescriptions: [nls.localize('debugAnyway', "Ignore task errors and start debugging."), nls.localize('showErrors', "Show the Problems view and do not start debugging."), nls.localize('prompt', "Prompt user."), nls.localize('cancel', "Cancel debugging.")],
@@ -553,5 +558,10 @@ configurationRegistry.registerConfiguration({
 			default: true,
 			description: nls.localize('debug.disassemblyView.showSourceCode', "Show Source Code in Disassembly View.")
 		},
+		'debug.autoExpandLazyVariables': {
+			type: 'boolean',
+			default: false,
+			description: nls.localize('debug.autoExpandLazyVariables', "Automatically show values for variables that are lazily resolved by the debugger, such as getters.")
+		}
 	}
 });
