@@ -5,7 +5,6 @@
 
 import { VSBuffer, VSBufferReadable, VSBufferReadableStream } from 'vs/base/common/buffer';
 import { CancellationToken } from 'vs/base/common/cancellation';
-import { ErrorNoTelemetry } from 'vs/base/common/errors';
 import { Event } from 'vs/base/common/event';
 import { IExpression, IRelativePattern } from 'vs/base/common/glob';
 import { IDisposable } from 'vs/base/common/lifecycle';
@@ -32,7 +31,7 @@ export interface IFileService {
 	readonly onDidChangeFileSystemProviderRegistrations: Event<IFileSystemProviderRegistrationEvent>;
 
 	/**
-	 * An event that is fired when a registered file system provider changes it's capabilities.
+	 * An event that is fired when a registered file system provider changes its capabilities.
 	 */
 	readonly onDidChangeFileSystemProviderCapabilities: Event<IFileSystemProviderCapabilitiesChangeEvent>;
 
@@ -81,7 +80,7 @@ export interface IFileService {
 	hasCapability(resource: URI, capability: FileSystemProviderCapabilities): boolean;
 
 	/**
-	 * List the schemes and capabilies for registered file system providers
+	 * List the schemes and capabilities for registered file system providers
 	 */
 	listCapabilities(): Iterable<{ scheme: string; capabilities: FileSystemProviderCapabilities }>;
 
@@ -568,6 +567,14 @@ export function hasFileReadStreamCapability(provider: IFileSystemProvider): prov
 	return !!(provider.capabilities & FileSystemProviderCapabilities.FileReadStream);
 }
 
+export interface IFileSystemProviderWithFileReadCapability extends IFileSystemProvider {
+	readFile(resource: URI): Promise<Uint8Array>;
+}
+
+export function hasFileReadCapability(provider: IFileSystemProvider): provider is IFileSystemProviderWithFileReadCapability {
+	return !!(provider.capabilities & FileSystemProviderCapabilities.Readonly);
+}
+
 export interface IFileSystemProviderWithFileAtomicReadCapability extends IFileSystemProvider {
 	readFile(resource: URI, opts?: IFileAtomicReadOptions): Promise<Uint8Array>;
 }
@@ -983,7 +990,7 @@ interface IBaseFileStat {
 	readonly ctime?: number;
 
 	/**
-	 * A unique identifier thet represents the
+	 * A unique identifier that represents the
 	 * current state of the file or directory.
 	 *
 	 * The value may or may not be resolved as
@@ -1148,7 +1155,7 @@ export interface ICreateFileOptions {
 	readonly overwrite?: boolean;
 }
 
-export class FileOperationError extends ErrorNoTelemetry {
+export class FileOperationError extends Error {
 	constructor(
 		message: string,
 		readonly fileOperationResult: FileOperationResult,

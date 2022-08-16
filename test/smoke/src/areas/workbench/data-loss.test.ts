@@ -5,10 +5,21 @@
 
 import { join } from 'path';
 import { Application, ApplicationOptions, Logger, Quality } from '../../../../automation';
-import { createApp, timeout, installDiagnosticsHandler, installAppAfterHandler, getRandomUserDataDir, suiteLogsPath } from '../../utils';
+import { createApp, timeout, installDiagnosticsHandler, installAppAfterHandler, getRandomUserDataDir, suiteLogsPath, suiteCrashPath } from '../../utils';
 
 export function setup(ensureStableCode: () => string | undefined, logger: Logger) {
-	describe('Data Loss (insiders -> insiders)', () => {
+	describe('Data Loss (insiders -> insiders)', function () {
+
+		// There are cases where `exitApplication` does not actually
+		// stop the application and our attempt then to `kill` the
+		// process tree results in data loss / state loss. All these
+		// tests here rely on state getting persisted properly, so
+		// until we have figured out the root cause, we retry these
+		// tests.
+		// See: https://github.com/microsoft/vscode/issues/157979
+		if (process.platform === 'darwin') {
+			this.retries(2);
+		}
 
 		let app: Application | undefined = undefined;
 
@@ -19,7 +30,8 @@ export function setup(ensureStableCode: () => string | undefined, logger: Logger
 		it('verifies opened editors are restored', async function () {
 			app = createApp({
 				...this.defaultOptions,
-				logsPath: suiteLogsPath(this.defaultOptions, 'test_verifies_opened_editors_are_restored')
+				logsPath: suiteLogsPath(this.defaultOptions, 'test_verifies_opened_editors_are_restored'),
+				crashesPath: suiteCrashPath(this.defaultOptions, 'test_verifies_opened_editors_are_restored')
 			});
 			await app.start();
 
@@ -44,7 +56,8 @@ export function setup(ensureStableCode: () => string | undefined, logger: Logger
 		it('verifies editors can save and restore', async function () {
 			app = createApp({
 				...this.defaultOptions,
-				logsPath: suiteLogsPath(this.defaultOptions, 'test_verifies_editors_can_save_and_restore')
+				logsPath: suiteLogsPath(this.defaultOptions, 'test_verifies_editors_can_save_and_restore'),
+				crashesPath: suiteCrashPath(this.defaultOptions, 'test_verifies_editors_can_save_and_restore')
 			});
 			await app.start();
 
@@ -84,7 +97,8 @@ export function setup(ensureStableCode: () => string | undefined, logger: Logger
 		async function testHotExit(title: string, restartDelay: number | undefined, autoSave: boolean | undefined) {
 			app = createApp({
 				...this.defaultOptions,
-				logsPath: suiteLogsPath(this.defaultOptions, title)
+				logsPath: suiteLogsPath(this.defaultOptions, title),
+				crashesPath: suiteCrashPath(this.defaultOptions, title)
 			});
 			await app.start();
 
@@ -127,7 +141,18 @@ export function setup(ensureStableCode: () => string | undefined, logger: Logger
 		}
 	});
 
-	describe('Data Loss (stable -> insiders)', () => {
+	describe('Data Loss (stable -> insiders)', function () {
+
+		// There are cases where `exitApplication` does not actually
+		// stop the application and our attempt then to `kill` the
+		// process tree results in data loss / state loss. All these
+		// tests here rely on state getting persisted properly, so
+		// until we have figured out the root cause, we retry these
+		// tests.
+		// See: https://github.com/microsoft/vscode/issues/157979
+		if (process.platform === 'darwin') {
+			this.retries(2);
+		}
 
 		let insidersApp: Application | undefined = undefined;
 		let stableApp: Application | undefined = undefined;
@@ -153,12 +178,14 @@ export function setup(ensureStableCode: () => string | undefined, logger: Logger
 
 			const userDataDir = getRandomUserDataDir(this.defaultOptions);
 			const logsPath = suiteLogsPath(this.defaultOptions, 'test_verifies_opened_editors_are_restored_from_stable');
+			const crashesPath = suiteCrashPath(this.defaultOptions, 'test_verifies_opened_editors_are_restored_from_stable');
 
 			const stableOptions: ApplicationOptions = Object.assign({}, this.defaultOptions);
 			stableOptions.codePath = stableCodePath;
 			stableOptions.userDataDir = userDataDir;
 			stableOptions.quality = Quality.Stable;
 			stableOptions.logsPath = logsPath;
+			stableOptions.crashesPath = crashesPath;
 
 			stableApp = new Application(stableOptions);
 			await stableApp.start();
@@ -176,6 +203,7 @@ export function setup(ensureStableCode: () => string | undefined, logger: Logger
 			const insiderOptions: ApplicationOptions = Object.assign({}, this.defaultOptions);
 			insiderOptions.userDataDir = userDataDir;
 			insiderOptions.logsPath = logsPath;
+			insiderOptions.crashesPath = crashesPath;
 
 			insidersApp = new Application(insiderOptions);
 			await insidersApp.start();
@@ -205,12 +233,14 @@ export function setup(ensureStableCode: () => string | undefined, logger: Logger
 
 			const userDataDir = getRandomUserDataDir(this.defaultOptions);
 			const logsPath = suiteLogsPath(this.defaultOptions, title);
+			const crashesPath = suiteCrashPath(this.defaultOptions, title);
 
 			const stableOptions: ApplicationOptions = Object.assign({}, this.defaultOptions);
 			stableOptions.codePath = stableCodePath;
 			stableOptions.userDataDir = userDataDir;
 			stableOptions.quality = Quality.Stable;
 			stableOptions.logsPath = logsPath;
+			stableOptions.crashesPath = crashesPath;
 
 			stableApp = new Application(stableOptions);
 			await stableApp.start();
@@ -240,6 +270,7 @@ export function setup(ensureStableCode: () => string | undefined, logger: Logger
 			const insiderOptions: ApplicationOptions = Object.assign({}, this.defaultOptions);
 			insiderOptions.userDataDir = userDataDir;
 			insiderOptions.logsPath = logsPath;
+			insiderOptions.crashesPath = crashesPath;
 
 			insidersApp = new Application(insiderOptions);
 			await insidersApp.start();

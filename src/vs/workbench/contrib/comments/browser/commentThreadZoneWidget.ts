@@ -49,11 +49,27 @@ export function parseMouseDownInfoFromEvent(e: IEditorMouseEvent) {
 	const gutterOffsetX = data.offsetX - data.glyphMarginWidth - data.lineNumbersWidth - data.glyphMarginLeft;
 
 	// don't collide with folding and git decorations
-	if (gutterOffsetX > 14) {
+	if (gutterOffsetX > 20) {
 		return null;
 	}
 
 	return { lineNumber: range.startLineNumber };
+}
+
+export function isMouseUpEventDragFromMouseDown(mouseDownInfo: { lineNumber: number } | null, e: IEditorMouseEvent) {
+	if (!mouseDownInfo) {
+		return null;
+	}
+
+	const { lineNumber } = mouseDownInfo;
+
+	const range = e.target.range;
+
+	if (!range) {
+		return null;
+	}
+
+	return lineNumber;
 }
 
 export function isMouseUpEventMatchMouseDown(mouseDownInfo: { lineNumber: number } | null, e: IEditorMouseEvent) {
@@ -342,7 +358,7 @@ export class ReviewZoneWidget extends ZoneWidget implements ICommentThreadWidget
 			}
 		}));
 
-		this._commentThreadDisposables.push(this._commentThread.onDidChangeCollasibleState(state => {
+		this._commentThreadDisposables.push(this._commentThread.onDidChangeCollapsibleState(state => {
 			if (state === languages.CommentThreadCollapsibleState.Expanded && !this._isExpanded) {
 				const lineNumber = this._commentThread.range.startLineNumber;
 
@@ -440,6 +456,7 @@ export class ReviewZoneWidget extends ZoneWidget implements ICommentThreadWidget
 	override show(rangeOrPos: IRange | IPosition, heightInLines: number): void {
 		this._isExpanded = true;
 		super.show(rangeOrPos, heightInLines);
+		this._commentThread.collapsibleState = languages.CommentThreadCollapsibleState.Expanded;
 		this._refresh(this._commentThreadWidget.getDimensions());
 	}
 
