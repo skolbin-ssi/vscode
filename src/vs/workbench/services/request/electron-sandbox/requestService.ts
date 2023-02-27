@@ -6,9 +6,9 @@
 import { IConfigurationService } from 'vs/platform/configuration/common/configuration';
 import { ILogService } from 'vs/platform/log/common/log';
 import { RequestService } from 'vs/platform/request/browser/requestService';
-import { registerSingleton } from 'vs/platform/instantiation/common/extensions';
+import { InstantiationType, registerSingleton } from 'vs/platform/instantiation/common/extensions';
 import { IRequestService } from 'vs/platform/request/common/request';
-import { INativeHostService } from 'vs/platform/native/electron-sandbox/native';
+import { INativeHostService } from 'vs/platform/native/common/native';
 
 export class NativeRequestService extends RequestService {
 
@@ -25,4 +25,4 @@ export class NativeRequestService extends RequestService {
 	}
 }
 
-registerSingleton(IRequestService, NativeRequestService, true);
+registerSingleton(IRequestService, NativeRequestService, InstantiationType.Delayed);

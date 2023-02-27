@@ -18,9 +18,15 @@ import { IConfigurationService } from 'vs/platform/configuration/common/configur
 import { INativeEnvironmentService } from 'vs/platform/environment/common/environment';
 import { getResolvedShellEnv } from 'vs/platform/shell/node/shellEnv';
 import { ILogService } from 'vs/platform/log/common/log';
-import { IHTTPConfiguration, IRequestService } from 'vs/platform/request/common/request';
+import { IRequestService } from 'vs/platform/request/common/request';
 import { Agent, getProxyAgent } from 'vs/platform/request/node/proxy';
 import { createGunzip } from 'zlib';
+
+interface IHTTPConfiguration {
+	proxy?: string;
+	proxyStrictSSL?: boolean;
+	proxyAuthorization?: string;
+}
 
 export interface IRawRequestFunction {
 	(options: http.RequestOptions, callback?: (res: http.IncomingMessage) => void): http.ClientRequest;
@@ -29,6 +35,7 @@ export interface IRawRequestFunction {
 export interface NodeRequestOptions extends IRequestOptions {
 	agent?: Agent;
 	strictSSL?: boolean;
+	isChromiumNetwork?: boolean;
 	getRawRequest?(options: IRequestOptions): IRawRequestFunction;
 }
 
@@ -46,33 +53,39 @@ export class RequestService extends Disposable implements IRequestService {
 	private shellEnvErrorLogged?: boolean;
 
 	constructor(
-		@IConfigurationService configurationService: IConfigurationService,
+		@IConfigurationService private readonly configurationService: IConfigurationService,
 		@INativeEnvironmentService private readonly environmentService: INativeEnvironmentService,
 		@ILogService private readonly logService: ILogService
 	) {
 		super();
-		this.configure(configurationService.getValue<IHTTPConfiguration>());
-		this._register(configurationService.onDidChangeConfiguration(() => this.configure(configurationService.getValue()), this));
+		this.configure();
+		this._register(configurationService.onDidChangeConfiguration(e => {
+			if (e.affectsConfiguration('http')) {
+				this.configure();
+			}
+		}));
 	}
 
-	private configure(config: IHTTPConfiguration) {
-		this.proxyUrl = config.http && config.http.proxy;
-		this.strictSSL = !!(config.http && config.http.proxyStrictSSL);
-		this.authorization = config.http && config.http.proxyAuthorization;
+	private configure() {
+		const config = this.configurationService.getValue<IHTTPConfiguration | undefined>('http');
+
+		this.proxyUrl = config?.proxy;
+		this.strictSSL = !!config?.proxyStrictSSL;
+		this.authorization = config?.proxyAuthorization;
 	}
 
 	async request(options: NodeRequestOptions, token: CancellationToken): Promise<IRequestContext> {
-		this.logService.trace('RequestService#request (node) - begin', options.url);
+		this.logService.trace(`RequestService#request (${options.isChromiumNetwork ? 'electron' : 'nodejs'}) - begin: ${options.type} ${options.url}`);
 
 		const { proxyUrl, strictSSL } = this;
 
 		let shellEnv: typeof process.env | undefined = undefined;
 		try {
-			shellEnv = await getResolvedShellEnv(this.logService, this.environmentService.args, process.env);
+			shellEnv = await getResolvedShellEnv(this.configurationService, this.logService, this.environmentService.args, process.env);
 		} catch (error) {
 			if (!this.shellEnvErrorLogged) {
 				this.shellEnvErrorLogged = true;
-				this.logService.error('RequestService#request (node) resolving shell environment failed', error);
+				this.logService.error(`RequestService#request (${options.isChromiumNetwork ? 'electron' : 'nodejs'}) - resolving shell environment failed: ${error}`);
 			}
 		}
 
@@ -93,13 +106,13 @@ export class RequestService extends Disposable implements IRequestService {
 		}
 
 		try {
-			const res = await this._request(options, token);
+			const result = await this.doRequest(options, token);
 
-			this.logService.trace('RequestService#request (node) - success', options.url);
+			this.logService.trace(`RequestService#request (${options.isChromiumNetwork ? 'electron' : 'nodejs'}) -   end: ${options.type} ${options.url} ${result.res.statusCode}`);
 
-			return res;
+			return result;
 		} catch (error) {
-			this.logService.trace('RequestService#request (node) - error', options.url, error);
+			this.logService.error(`RequestService#request (${options.isChromiumNetwork ? 'electron' : 'nodejs'}) - error: ${options.type} ${options.url} ${error}`);
 
 			throw error;
 		}
@@ -108,13 +121,12 @@ export class RequestService extends Disposable implements IRequestService {
 	private async getNodeRequest(options: IRequestOptions): Promise<IRawRequestFunction> {
 		const endpoint = parseUrl(options.url!);
 		const module = endpoint.protocol === 'https:' ? await import('https') : await import('http');
+
 		return module.request;
 	}
 
-	private _request(options: NodeRequestOptions, token: CancellationToken): Promise<IRequestContext> {
-
-		return Promises.withAsyncBody<IRequestContext>(async (c, e) => {
-
+	private doRequest(options: NodeRequestOptions, token: CancellationToken): Promise<IRequestContext> {
+		return Promises.withAsyncBody<IRequestContext>(async (resolve, reject) => {
 			const endpoint = parseUrl(options.url!);
 			const rawRequest = options.getRawRequest
 				? options.getRawRequest(options)
@@ -138,26 +150,38 @@ export class RequestService extends Disposable implements IRequestService {
 			const req = rawRequest(opts, (res: http.IncomingMessage) => {
 				const followRedirects: number = isNumber(options.followRedirects) ? options.followRedirects : 3;
 				if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && followRedirects > 0 && res.headers['location']) {
-					this._request({
+					this.doRequest({
 						...options,
 						url: res.headers['location'],
 						followRedirects: followRedirects - 1
-					}, token).then(c, e);
+					}, token).then(resolve, reject);
 				} else {
 					let stream: streams.ReadableStreamEvents<Uint8Array> = res;
 
-					if (res.headers['content-encoding'] === 'gzip') {
+					// Responses from Electron net module should be treated as response
+					// from browser, which will apply gzip filter and decompress the response
+					// using zlib before passing the result to us. Following step can be bypassed
+					// in this case and proceed further.
+					// Refs https://source.chromium.org/chromium/chromium/src/+/main:net/url_request/url_request_http_job.cc;l=1266-1318
+					if (!options.isChromiumNetwork && res.headers['content-encoding'] === 'gzip') {
 						stream = res.pipe(createGunzip());
 					}
 
-					c({ res, stream: streamToBufferReadableStream(stream) } as IRequestContext);
+					resolve({ res, stream: streamToBufferReadableStream(stream) } as IRequestContext);
 				}
 			});
 
-			req.on('error', e);
+			req.on('error', reject);
 
 			if (options.timeout) {
 				req.setTimeout(options.timeout);
+			}
+
+			// Chromium will abort the request if forbidden headers are set.
+			// Ref https://source.chromium.org/chromium/chromium/src/+/main:services/network/public/cpp/header_util.cc;l=14-48;
+			// for additional context.
+			if (options.isChromiumNetwork) {
+				req.removeHeader('Content-Length');
 			}
 
 			if (options.data) {
@@ -170,7 +194,8 @@ export class RequestService extends Disposable implements IRequestService {
 
 			token.onCancellationRequested(() => {
 				req.abort();
-				e(new CancellationError());
+
+				reject(new CancellationError());
 			});
 		});
 	}

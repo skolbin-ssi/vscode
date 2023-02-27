@@ -57,7 +57,8 @@ const CORE_TYPES = [
 	'MessageChannel',
 	'MessagePort',
 	'URL',
-	'URLSearchParams'
+	'URLSearchParams',
+	'ReadonlyArray',
 ];
 
 // Types that are defined in a common layer but are known to be only
@@ -67,7 +68,9 @@ const NATIVE_TYPES = [
 	'INativeEnvironmentService',
 	'AbstractNativeEnvironmentService',
 	'INativeWindowConfiguration',
-	'ICommonNativeHostService'
+	'ICommonNativeHostService',
+	'INativeHostService',
+	'IMainProcessService'
 ];
 
 const RULES: IRule[] = [
