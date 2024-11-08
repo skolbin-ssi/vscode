@@ -3,8 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { compareBy, numberComparator } from 'vs/base/common/arrays';
-import { ContiguousGrowingArray } from 'vs/editor/common/model/textModelTokens';
+import { compareBy, numberComparator } from '../../../../base/common/arrays.js';
 
 export class ArrayEdit {
 	public readonly edits: readonly SingleArrayEdit[];
@@ -16,14 +15,6 @@ export class ArrayEdit {
 		edits: readonly SingleArrayEdit[]
 	) {
 		this.edits = edits.slice().sort(compareBy(c => c.offset, numberComparator));
-	}
-
-	applyTo(array: ContiguousGrowingArray<any>): void {
-		for (let i = this.edits.length - 1; i >= 0; i--) {
-			const c = this.edits[i];
-			array.delete(c.offset, c.length);
-			array.insert(c.offset, c.newLength);
-		}
 	}
 
 	applyToArray(array: any[]): void {

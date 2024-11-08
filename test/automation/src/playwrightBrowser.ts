@@ -6,7 +6,7 @@
 import * as playwright from '@playwright/test';
 import { ChildProcess, spawn } from 'child_process';
 import { join } from 'path';
-import * as mkdirp from 'mkdirp';
+import * as fs from 'fs';
 import { URI } from 'vscode-uri';
 import { Logger, measureAndLog } from './logger';
 import type { LaunchOptions } from './code';
@@ -32,9 +32,10 @@ export async function launch(options: LaunchOptions): Promise<{ serverProcess: C
 
 async function launchServer(options: LaunchOptions) {
 	const { userDataDir, codePath, extensionsPath, logger, logsPath } = options;
+	const serverLogsPath = join(logsPath, 'server');
 	const codeServerPath = codePath ?? process.env.VSCODE_REMOTE_SERVER_PATH;
 	const agentFolder = userDataDir;
-	await measureAndLog(() => mkdirp(agentFolder), `mkdirp(${agentFolder})`, logger);
+	await measureAndLog(() => fs.promises.mkdir(agentFolder, { recursive: true }), `mkdirp(${agentFolder})`, logger);
 
 	const env = {
 		VSCODE_REMOTE_SERVER_PATH: codeServerPath,
@@ -49,7 +50,7 @@ async function launchServer(options: LaunchOptions) {
 		`--extensions-dir=${extensionsPath}`,
 		`--server-data-dir=${agentFolder}`,
 		'--accept-server-license-terms',
-		`--logsPath=${logsPath}`
+		`--logsPath=${serverLogsPath}`
 	];
 
 	if (options.verbose) {
@@ -68,13 +69,14 @@ async function launchServer(options: LaunchOptions) {
 		logger.log(`Starting server out of sources from '${serverLocation}'`);
 	}
 
-	logger.log(`Storing log files into '${logsPath}'`);
+	logger.log(`Storing log files into '${serverLogsPath}'`);
 
 	logger.log(`Command line: '${serverLocation}' ${args.join(' ')}`);
+	const shell: boolean = (process.platform === 'win32');
 	const serverProcess = spawn(
 		serverLocation,
 		args,
-		{ env }
+		{ env, shell }
 	);
 
 	logger.log(`Started server for browser smoke tests (pid: ${serverProcess.pid})`);
@@ -88,7 +90,11 @@ async function launchServer(options: LaunchOptions) {
 async function launchBrowser(options: LaunchOptions, endpoint: string) {
 	const { logger, workspacePath, tracing, headless } = options;
 
-	const browser = await measureAndLog(() => playwright[options.browser ?? 'chromium'].launch({ headless: headless ?? false }), 'playwright#launch', logger);
+	const browser = await measureAndLog(() => playwright[options.browser ?? 'chromium'].launch({
+		headless: headless ?? false,
+		timeout: 0
+	}), 'playwright#launch', logger);
+
 	browser.on('disconnected', () => logger.log(`Playwright: browser disconnected`));
 
 	const context = await measureAndLog(() => browser.newContext(), 'browser.newContext', logger);

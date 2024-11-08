@@ -3,26 +3,25 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { CancelablePromise, createCancelablePromise, TimeoutTimer } from 'vs/base/common/async';
-import { RGBA } from 'vs/base/common/color';
-import { onUnexpectedError } from 'vs/base/common/errors';
-import { Emitter, Event } from 'vs/base/common/event';
-import { Disposable, DisposableStore } from 'vs/base/common/lifecycle';
-import { StopWatch } from 'vs/base/common/stopwatch';
-import { noBreakWhitespace } from 'vs/base/common/strings';
-import { ICodeEditor } from 'vs/editor/browser/editorBrowser';
-import { DynamicCssRules } from 'vs/editor/browser/editorDom';
-import { EditorContributionInstantiation, registerEditorContribution } from 'vs/editor/browser/editorExtensions';
-import { EditorOption } from 'vs/editor/common/config/editorOptions';
-import { Position } from 'vs/editor/common/core/position';
-import { Range } from 'vs/editor/common/core/range';
-import { IEditorContribution } from 'vs/editor/common/editorCommon';
-import { IModelDecoration, IModelDeltaDecoration } from 'vs/editor/common/model';
-import { ModelDecorationOptions } from 'vs/editor/common/model/textModel';
-import { IFeatureDebounceInformation, ILanguageFeatureDebounceService } from 'vs/editor/common/services/languageFeatureDebounce';
-import { ILanguageFeaturesService } from 'vs/editor/common/services/languageFeatures';
-import { getColors, IColorData } from 'vs/editor/contrib/colorPicker/browser/color';
-import { IConfigurationService } from 'vs/platform/configuration/common/configuration';
+import { CancelablePromise, createCancelablePromise, TimeoutTimer } from '../../../../base/common/async.js';
+import { RGBA } from '../../../../base/common/color.js';
+import { onUnexpectedError } from '../../../../base/common/errors.js';
+import { Emitter, Event } from '../../../../base/common/event.js';
+import { Disposable, DisposableStore } from '../../../../base/common/lifecycle.js';
+import { StopWatch } from '../../../../base/common/stopwatch.js';
+import { noBreakWhitespace } from '../../../../base/common/strings.js';
+import { ICodeEditor } from '../../../browser/editorBrowser.js';
+import { DynamicCssRules } from '../../../browser/editorDom.js';
+import { EditorOption } from '../../../common/config/editorOptions.js';
+import { Position } from '../../../common/core/position.js';
+import { Range } from '../../../common/core/range.js';
+import { IEditorContribution } from '../../../common/editorCommon.js';
+import { IModelDecoration, IModelDeltaDecoration } from '../../../common/model.js';
+import { ModelDecorationOptions } from '../../../common/model/textModel.js';
+import { IFeatureDebounceInformation, ILanguageFeatureDebounceService } from '../../../common/services/languageFeatureDebounce.js';
+import { ILanguageFeaturesService } from '../../../common/services/languageFeatures.js';
+import { getColors, IColorData } from './color.js';
+import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 
 export const ColorDecorationInjectedTextMarker = Object.create({});
 
@@ -43,7 +42,8 @@ export class ColorDetector extends Disposable implements IEditorContribution {
 
 	private readonly _colorDecoratorIds = this._editor.createDecorationsCollection();
 
-	private _isEnabled: boolean;
+	private _isColorDecoratorsEnabled: boolean;
+	private _isDefaultColorDecoratorsEnabled: boolean;
 
 	private readonly _ruleFactory = new DynamicCssRules(this._editor);
 
@@ -58,19 +58,22 @@ export class ColorDetector extends Disposable implements IEditorContribution {
 		super();
 		this._debounceInformation = languageFeatureDebounceService.for(_languageFeaturesService.colorProvider, 'Document Colors', { min: ColorDetector.RECOMPUTE_TIME });
 		this._register(_editor.onDidChangeModel(() => {
-			this._isEnabled = this.isEnabled();
-			this.onModelChanged();
+			this._isColorDecoratorsEnabled = this.isEnabled();
+			this.updateColors();
 		}));
-		this._register(_editor.onDidChangeModelLanguage(() => this.onModelChanged()));
-		this._register(_languageFeaturesService.colorProvider.onDidChange(() => this.onModelChanged()));
+		this._register(_editor.onDidChangeModelLanguage(() => this.updateColors()));
+		this._register(_languageFeaturesService.colorProvider.onDidChange(() => this.updateColors()));
 		this._register(_editor.onDidChangeConfiguration((e) => {
-			const prevIsEnabled = this._isEnabled;
-			this._isEnabled = this.isEnabled();
-			const updated = prevIsEnabled !== this._isEnabled || e.hasChanged(EditorOption.colorDecoratorsLimit);
-			if (updated) {
-				if (this._isEnabled) {
-					this.onModelChanged();
-				} else {
+			const prevIsEnabled = this._isColorDecoratorsEnabled;
+			this._isColorDecoratorsEnabled = this.isEnabled();
+			this._isDefaultColorDecoratorsEnabled = this._editor.getOption(EditorOption.defaultColorDecorators);
+			const updatedColorDecoratorsSetting = prevIsEnabled !== this._isColorDecoratorsEnabled || e.hasChanged(EditorOption.colorDecoratorsLimit);
+			const updatedDefaultColorDecoratorsSetting = e.hasChanged(EditorOption.defaultColorDecorators);
+			if (updatedColorDecoratorsSetting || updatedDefaultColorDecoratorsSetting) {
+				if (this._isColorDecoratorsEnabled) {
+					this.updateColors();
+				}
+				else {
 					this.removeAllDecorations();
 				}
 			}
@@ -78,8 +81,9 @@ export class ColorDetector extends Disposable implements IEditorContribution {
 
 		this._timeoutTimer = null;
 		this._computePromise = null;
-		this._isEnabled = this.isEnabled();
-		this.onModelChanged();
+		this._isColorDecoratorsEnabled = this.isEnabled();
+		this._isDefaultColorDecoratorsEnabled = this._editor.getOption(EditorOption.defaultColorDecorators);
+		this.updateColors();
 	}
 
 	isEnabled(): boolean {
@@ -114,10 +118,10 @@ export class ColorDetector extends Disposable implements IEditorContribution {
 		super.dispose();
 	}
 
-	private onModelChanged(): void {
+	private updateColors(): void {
 		this.stop();
 
-		if (!this._isEnabled) {
+		if (!this._isColorDecoratorsEnabled) {
 			return;
 		}
 		const model = this._editor.getModel();
@@ -138,22 +142,25 @@ export class ColorDetector extends Disposable implements IEditorContribution {
 		this.beginCompute();
 	}
 
-	private beginCompute(): void {
+	private async beginCompute(): Promise<void> {
 		this._computePromise = createCancelablePromise(async token => {
 			const model = this._editor.getModel();
 			if (!model) {
-				return Promise.resolve([]);
+				return [];
 			}
 			const sw = new StopWatch(false);
-			const colors = await getColors(this._languageFeaturesService.colorProvider, model, token);
+			const colors = await getColors(this._languageFeaturesService.colorProvider, model, token, this._isDefaultColorDecoratorsEnabled);
 			this._debounceInformation.update(model, sw.elapsed());
 			return colors;
 		});
-		this._computePromise.then((colorInfos) => {
-			this.updateDecorations(colorInfos);
-			this.updateColorDecorators(colorInfos);
+		try {
+			const colors = await this._computePromise;
+			this.updateDecorations(colors);
+			this.updateColorDecorators(colors);
 			this._computePromise = null;
-		}, onUnexpectedError);
+		} catch (e) {
+			onUnexpectedError(e);
+		}
 	}
 
 	private stop(): void {
@@ -187,7 +194,7 @@ export class ColorDetector extends Disposable implements IEditorContribution {
 		});
 	}
 
-	private _colorDecorationClassRefs = this._register(new DisposableStore());
+	private readonly _colorDecorationClassRefs = this._register(new DisposableStore());
 
 	private updateColorDecorators(colorData: IColorData[]): void {
 		this._colorDecorationClassRefs.clear();
@@ -280,5 +287,3 @@ export class DecoratorLimitReporter {
 		}
 	}
 }
-
-registerEditorContribution(ColorDetector.ID, ColorDetector, EditorContributionInstantiation.AfterFirstRender);

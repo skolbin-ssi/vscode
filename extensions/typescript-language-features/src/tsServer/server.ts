@@ -3,22 +3,23 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import * as vscode from 'vscode';
 import { Cancellation } from '@vscode/sync-api-common/lib/common/messageCancellation';
-import type * as Proto from '../protocol';
-import { EventName } from '../protocol.const';
+import * as vscode from 'vscode';
+import { TypeScriptServiceConfiguration } from '../configuration/configuration';
+import { TelemetryReporter } from '../logging/telemetry';
+import Tracer from '../logging/tracer';
 import { CallbackMap } from '../tsServer/callbackMap';
 import { RequestItem, RequestQueue, RequestQueueingType } from '../tsServer/requestQueue';
 import { TypeScriptServerError } from '../tsServer/serverError';
 import { ServerResponse, ServerType, TypeScriptRequests } from '../typescriptService';
-import { TypeScriptServiceConfiguration } from '../utils/configuration';
 import { Disposable } from '../utils/dispose';
-import { TelemetryReporter } from '../utils/telemetry';
-import Tracer from '../utils/tracer';
+import { isWebAndHasSharedArrayBuffers } from '../utils/platform';
 import { OngoingRequestCanceller } from './cancellation';
+import type * as Proto from './protocol/protocol';
+import { EventName } from './protocol/protocol.const';
 import { TypeScriptVersionManager } from './versionManager';
 import { TypeScriptVersion } from './versionProvider';
-import { isWebAndHasSharedArrayBuffers } from '../utils/platform';
+import { NodeVersionManager } from './nodeManager';
 
 export enum ExecutionTarget {
 	Semantic,
@@ -70,6 +71,7 @@ export interface TsServerProcessFactory {
 		kind: TsServerProcessKind,
 		configuration: TypeScriptServiceConfiguration,
 		versionManager: TypeScriptVersionManager,
+		nodeVersionManager: NodeVersionManager,
 		tsServerLog: TsServerLog | undefined,
 	): TsServerProcess;
 }
@@ -164,6 +166,9 @@ export class SingleTsServer extends Disposable implements ITypeScriptServer {
 							this._tracer.traceRequestCompleted(this._serverId, 'requestCompleted', seq, callback);
 							callback.onSuccess(undefined);
 						}
+						if ((event as Proto.RequestCompletedEvent).body.performanceData) {
+							this._onEvent.fire(event);
+						}
 					} else {
 						this._tracer.traceEvent(this._serverId, event);
 						this._onEvent.fire(event);
@@ -239,7 +244,7 @@ export class SingleTsServer extends Disposable implements ITypeScriptServer {
 				}
 			}).catch((err: Error) => {
 				if (err instanceof TypeScriptServerError) {
-					if (!executeInfo.token || !executeInfo.token.isCancellationRequested) {
+					if (!executeInfo.token?.isCancellationRequested) {
 						/* __GDPR__
 							"languageServiceErrorResponse" : {
 								"owner": "mjbvz",
@@ -299,7 +304,7 @@ export class SingleTsServer extends Disposable implements ITypeScriptServer {
 	}
 
 	private logTrace(message: string) {
-		this._tracer.logTrace(this._serverId, message);
+		this._tracer.trace(this._serverId, message);
 	}
 
 	private static readonly fenceCommands = new Set(['change', 'close', 'open', 'updateOpen']);
@@ -495,6 +500,7 @@ export class SyntaxRoutingTsServer extends Disposable implements ITypeScriptServ
 		'format',
 		'formatonkey',
 		'docCommentTemplate',
+		'linkedEditingRange'
 	]);
 
 	/**

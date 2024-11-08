@@ -3,18 +3,18 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { toLocalISOString } from 'vs/base/common/date';
-import { memoize } from 'vs/base/common/decorators';
-import { FileAccess } from 'vs/base/common/network';
-import { dirname, join, normalize, resolve } from 'vs/base/common/path';
-import { env } from 'vs/base/common/process';
-import { joinPath } from 'vs/base/common/resources';
-import { URI } from 'vs/base/common/uri';
-import { NativeParsedArgs } from 'vs/platform/environment/common/argv';
-import { ExtensionKind, IExtensionHostDebugParams, INativeEnvironmentService } from 'vs/platform/environment/common/environment';
-import { IProductService } from 'vs/platform/product/common/productService';
+import { toLocalISOString } from '../../../base/common/date.js';
+import { memoize } from '../../../base/common/decorators.js';
+import { FileAccess, Schemas } from '../../../base/common/network.js';
+import { dirname, join, normalize, resolve } from '../../../base/common/path.js';
+import { env } from '../../../base/common/process.js';
+import { joinPath } from '../../../base/common/resources.js';
+import { URI } from '../../../base/common/uri.js';
+import { NativeParsedArgs } from './argv.js';
+import { ExtensionKind, IExtensionHostDebugParams, INativeEnvironmentService } from './environment.js';
+import { IProductService } from '../../product/common/productService.js';
 
-export const EXTENSION_IDENTIFIER_WITH_LOG_REGEX = /^([^.]+\..+):(.+)$/;
+export const EXTENSION_IDENTIFIER_WITH_LOG_REGEX = /^([^.]+\..+)[:=](.+)$/;
 
 export interface INativeEnvironmentPaths {
 
@@ -65,25 +65,19 @@ export abstract class AbstractNativeEnvironmentService implements INativeEnviron
 	get stateResource(): URI { return joinPath(this.appSettingsHome, 'globalStorage', 'storage.json'); }
 
 	@memoize
-	get userRoamingDataHome(): URI { return this.appSettingsHome; }
+	get userRoamingDataHome(): URI { return this.appSettingsHome.with({ scheme: Schemas.vscodeUserData }); }
 
 	@memoize
-	get userDataSyncHome(): URI { return joinPath(this.userRoamingDataHome, 'sync'); }
+	get userDataSyncHome(): URI { return joinPath(this.appSettingsHome, 'sync'); }
 
-	get logsPath(): string {
+	get logsHome(): URI {
 		if (!this.args.logsPath) {
 			const key = toLocalISOString(new Date()).replace(/-|:|\.\d+Z$/g, '');
 			this.args.logsPath = join(this.userDataPath, 'logs', key);
 		}
 
-		return this.args.logsPath;
+		return URI.file(this.args.logsPath);
 	}
-
-	@memoize
-	get userDataSyncLogResource(): URI { return URI.file(join(this.logsPath, 'userDataSync.log')); }
-
-	@memoize
-	get editSessionsLogResource(): URI { return URI.file(join(this.logsPath, 'editSessions.log')); }
 
 	@memoize
 	get sync(): 'on' | 'off' | undefined { return this.args.sync; }
@@ -115,9 +109,6 @@ export abstract class AbstractNativeEnvironmentService implements INativeEnviron
 
 	@memoize
 	get untitledWorkspacesHome(): URI { return URI.file(join(this.userDataPath, 'Workspaces')); }
-
-	@memoize
-	get installSourcePath(): string { return join(this.userDataPath, 'installSource'); }
 
 	@memoize
 	get builtinExtensionsPath(): string {
@@ -240,11 +231,13 @@ export abstract class AbstractNativeEnvironmentService implements INativeEnviron
 	get crashReporterDirectory(): string | undefined { return this.args['crash-reporter-directory']; }
 
 	@memoize
-	get telemetryLogResource(): URI { return URI.file(join(this.logsPath, 'telemetry.log')); }
 	get disableTelemetry(): boolean { return !!this.args['disable-telemetry']; }
 
 	@memoize
 	get disableWorkspaceTrust(): boolean { return !!this.args['disable-workspace-trust']; }
+
+	@memoize
+	get useInMemorySecretStorage(): boolean { return !!this.args['use-inmemory-secretstorage']; }
 
 	@memoize
 	get policyFile(): URI | undefined {

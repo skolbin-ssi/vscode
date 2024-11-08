@@ -3,21 +3,22 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { Registry } from 'vs/platform/registry/common/platform';
-import { IColorRegistry, Extensions, ColorContribution } from 'vs/platform/theme/common/colorRegistry';
-import { asTextOrError } from 'vs/platform/request/common/request';
-import * as pfs from 'vs/base/node/pfs';
-import * as path from 'vs/base/common/path';
-import * as assert from 'assert';
-import { CancellationToken } from 'vs/base/common/cancellation';
-import { RequestService } from 'vs/platform/request/node/requestService';
-import { TestConfigurationService } from 'vs/platform/configuration/test/common/testConfigurationService';
+import * as fs from 'fs';
+import { Registry } from '../../../../../platform/registry/common/platform.js';
+import { IColorRegistry, Extensions, ColorContribution, asCssVariableName } from '../../../../../platform/theme/common/colorRegistry.js';
+import { asTextOrError } from '../../../../../platform/request/common/request.js';
+import * as pfs from '../../../../../base/node/pfs.js';
+import * as path from '../../../../../base/common/path.js';
+import assert from 'assert';
+import { CancellationToken } from '../../../../../base/common/cancellation.js';
+import { RequestService } from '../../../../../platform/request/node/requestService.js';
+import { TestConfigurationService } from '../../../../../platform/configuration/test/common/testConfigurationService.js';
 // eslint-disable-next-line local/code-import-patterns
-import 'vs/workbench/workbench.desktop.main';
-import { NullLogService } from 'vs/platform/log/common/log';
-import { mock } from 'vs/base/test/common/mock';
-import { INativeEnvironmentService } from 'vs/platform/environment/common/environment';
-import { FileAccess } from 'vs/base/common/network';
+import '../../../../workbench.desktop.main.js';
+import { NullLogService } from '../../../../../platform/log/common/log.js';
+import { mock } from '../../../../../base/test/common/mock.js';
+import { INativeEnvironmentService } from '../../../../../platform/environment/common/environment.js';
+import { FileAccess } from '../../../../../base/common/network.js';
 
 interface ColorInfo {
 	description: string;
@@ -32,9 +33,59 @@ interface DescriptionDiff {
 
 export const experimental: string[] = []; // 'settings.modifiedItemForeground', 'editorUnnecessary.foreground' ];
 
+
+const knwonVariablesFileName = 'vscode-known-variables.json';
+
 suite('Color Registry', function () {
 
-	test('all colors documented in theme-color.md', async function () {
+	test(`update colors in ${knwonVariablesFileName}`, async function () {
+		const varFilePath = FileAccess.asFileUri(`vs/../../build/lib/stylelint/${knwonVariablesFileName}`).fsPath;
+		const content = (await fs.promises.readFile(varFilePath)).toString();
+
+		const variablesInfo = JSON.parse(content);
+
+		const colorsArray = variablesInfo.colors as string[];
+
+		assert.ok(colorsArray && colorsArray.length > 0, '${knwonVariablesFileName} contains no color descriptions');
+
+		const colors = new Set(colorsArray);
+
+		const updatedColors = [];
+		const missing = [];
+		const themingRegistry = Registry.as<IColorRegistry>(Extensions.ColorContribution);
+		for (const color of themingRegistry.getColors()) {
+			const id = asCssVariableName(color.id);
+
+			if (!colors.has(id)) {
+				if (!color.deprecationMessage) {
+					missing.push(id);
+				}
+			} else {
+				colors.delete(id);
+			}
+			updatedColors.push(id);
+		}
+
+		const superfluousKeys = [...colors.keys()];
+
+		let errorText = '';
+		if (missing.length > 0) {
+			errorText += `\n\Adding the following colors:\n\n${JSON.stringify(missing, undefined, '\t')}\n`;
+		}
+		if (superfluousKeys.length > 0) {
+			errorText += `\n\Removing the following colors:\n\n${superfluousKeys.join('\n')}\n`;
+		}
+
+		if (errorText.length > 0) {
+			updatedColors.sort();
+			variablesInfo.colors = updatedColors;
+			await pfs.Promises.writeFile(varFilePath, JSON.stringify(variablesInfo, undefined, '\t'));
+
+			assert.fail(`\n\Updating ${path.normalize(varFilePath)}.\nPlease verify and commit.\n\n${errorText}\n`);
+		}
+	});
+
+	test('all colors listed in theme-color.md', async function () {
 		// avoid importing the TestEnvironmentService as it brings in a duplicate registration of the file editor input factory.
 		const environmentService = new class extends mock<INativeEnvironmentService>() { override args = { _: [] }; };
 
@@ -120,7 +171,7 @@ async function getColorsFromExtension(): Promise<{ [id: string]: string }> {
 	const result: { [id: string]: string } = Object.create(null);
 	for (const folder of extFolders) {
 		try {
-			const packageJSON = JSON.parse((await pfs.Promises.readFile(path.join(extPath, folder, 'package.json'))).toString());
+			const packageJSON = JSON.parse((await fs.promises.readFile(path.join(extPath, folder, 'package.json'))).toString());
 			const contributes = packageJSON['contributes'];
 			if (contributes) {
 				const colors = contributes['colors'];

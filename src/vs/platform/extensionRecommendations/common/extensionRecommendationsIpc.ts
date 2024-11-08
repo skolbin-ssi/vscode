@@ -3,9 +3,9 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { Event } from 'vs/base/common/event';
-import { IChannel, IServerChannel } from 'vs/base/parts/ipc/common/ipc';
-import { IExtensionRecommendationNotificationService, RecommendationsNotificationResult, RecommendationSource } from 'vs/platform/extensionRecommendations/common/extensionRecommendations';
+import { Event } from '../../../base/common/event.js';
+import { IChannel, IServerChannel } from '../../../base/parts/ipc/common/ipc.js';
+import { IExtensionRecommendationNotificationService, IExtensionRecommendations, RecommendationsNotificationResult } from './extensionRecommendations.js';
 
 export class ExtensionRecommendationNotificationServiceChannelClient implements IExtensionRecommendationNotificationService {
 
@@ -15,8 +15,8 @@ export class ExtensionRecommendationNotificationServiceChannelClient implements 
 
 	get ignoredRecommendations(): string[] { throw new Error('not supported'); }
 
-	promptImportantExtensionsInstallNotification(extensionIds: string[], message: string, searchValue: string, priority: RecommendationSource): Promise<RecommendationsNotificationResult> {
-		return this.channel.call('promptImportantExtensionsInstallNotification', [extensionIds, message, searchValue, priority]);
+	promptImportantExtensionsInstallNotification(extensionRecommendations: IExtensionRecommendations): Promise<RecommendationsNotificationResult> {
+		return this.channel.call('promptImportantExtensionsInstallNotification', [extensionRecommendations]);
 	}
 
 	promptWorkspaceRecommendations(recommendations: string[]): Promise<void> {
@@ -39,7 +39,7 @@ export class ExtensionRecommendationNotificationServiceChannel implements IServe
 
 	call(_: unknown, command: string, args?: any): Promise<any> {
 		switch (command) {
-			case 'promptImportantExtensionsInstallNotification': return this.service.promptImportantExtensionsInstallNotification(args[0], args[1], args[2], args[3]);
+			case 'promptImportantExtensionsInstallNotification': return this.service.promptImportantExtensionsInstallNotification(args[0]);
 		}
 
 		throw new Error(`Call not found: ${command}`);

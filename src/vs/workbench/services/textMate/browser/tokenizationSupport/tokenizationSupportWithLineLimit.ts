@@ -3,31 +3,28 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { LanguageId } from 'vs/editor/common/encodedTokenAttributes';
-import { EncodedTokenizationResult, IBackgroundTokenizationStore, IBackgroundTokenizer, IState, ITokenizationSupport, TokenizationResult } from 'vs/editor/common/languages';
-import { nullTokenizeEncoded } from 'vs/editor/common/languages/nullTokenize';
-import { ITextModel } from 'vs/editor/common/model';
-import { IConfigurationService } from 'vs/platform/configuration/common/configuration';
+import { LanguageId } from '../../../../../editor/common/encodedTokenAttributes.js';
+import { EncodedTokenizationResult, IBackgroundTokenizationStore, IBackgroundTokenizer, IState, ITokenizationSupport, TokenizationResult } from '../../../../../editor/common/languages.js';
+import { nullTokenizeEncoded } from '../../../../../editor/common/languages/nullTokenize.js';
+import { ITextModel } from '../../../../../editor/common/model.js';
+import { Disposable, IDisposable } from '../../../../../base/common/lifecycle.js';
+import { IObservable, keepObserved } from '../../../../../base/common/observable.js';
 
-export class TokenizationSupportWithLineLimit implements ITokenizationSupport {
-	private _maxTokenizationLineLength: number;
+export class TokenizationSupportWithLineLimit extends Disposable implements ITokenizationSupport {
+	get backgroundTokenizerShouldOnlyVerifyTokens(): boolean | undefined {
+		return this._actual.backgroundTokenizerShouldOnlyVerifyTokens;
+	}
 
 	constructor(
-		private readonly _languageId: string,
 		private readonly _encodedLanguageId: LanguageId,
 		private readonly _actual: ITokenizationSupport,
-		@IConfigurationService private readonly _configurationService: IConfigurationService,
+		disposable: IDisposable,
+		private readonly _maxTokenizationLineLength: IObservable<number>,
 	) {
-		this._maxTokenizationLineLength = this._configurationService.getValue<number>('editor.maxTokenizationLineLength', {
-			overrideIdentifier: this._languageId
-		});
-		this._configurationService.onDidChangeConfiguration(e => {
-			if (e.affectsConfiguration('editor.maxTokenizationLineLength')) {
-				this._maxTokenizationLineLength = this._configurationService.getValue<number>('editor.maxTokenizationLineLength', {
-					overrideIdentifier: this._languageId
-				});
-			}
-		});
+		super();
+
+		this._register(keepObserved(this._maxTokenizationLineLength));
+		this._register(disposable);
 	}
 
 	getInitialState(): IState {
@@ -40,7 +37,7 @@ export class TokenizationSupportWithLineLimit implements ITokenizationSupport {
 
 	tokenizeEncoded(line: string, hasEOL: boolean, state: IState): EncodedTokenizationResult {
 		// Do not attempt to tokenize if a line is too long
-		if (line.length >= this._maxTokenizationLineLength) {
+		if (line.length >= this._maxTokenizationLineLength.get()) {
 			return nullTokenizeEncoded(this._encodedLanguageId, state);
 		}
 

@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { NewWorkerMessage, TerminateWorkerMessage } from 'vs/workbench/services/extensions/common/polyfillNestedWorker.protocol';
+import { NewWorkerMessage, TerminateWorkerMessage } from '../common/polyfillNestedWorker.protocol.js';
 
 declare function postMessage(data: any, transferables?: Transferable[]): void;
 
@@ -38,7 +38,7 @@ const _bootstrapFnSource = (function _bootstrapFn(workerUrl: string) {
 		});
 
 		port.addEventListener('message', msg => {
-			globalThis.dispatchEvent(new MessageEvent('message', { data: msg.data }));
+			globalThis.dispatchEvent(new MessageEvent('message', { data: msg.data, ports: msg.ports ? [...msg.ports] : undefined }));
 		});
 
 		port.start();

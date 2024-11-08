@@ -3,23 +3,23 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { Queue } from 'vs/base/common/async';
-import { VSBuffer } from 'vs/base/common/buffer';
-import { Disposable } from 'vs/base/common/lifecycle';
-import { Emitter, Event } from 'vs/base/common/event';
-import { ResourceMap } from 'vs/base/common/map';
-import { URI, UriComponents } from 'vs/base/common/uri';
-import { Metadata, isIExtensionIdentifier } from 'vs/platform/extensionManagement/common/extensionManagement';
-import { areSameExtensions } from 'vs/platform/extensionManagement/common/extensionManagementUtil';
-import { IExtension, IExtensionIdentifier } from 'vs/platform/extensions/common/extensions';
-import { FileOperationResult, IFileService, toFileOperationResult } from 'vs/platform/files/common/files';
-import { createDecorator } from 'vs/platform/instantiation/common/instantiation';
-import { ILogService } from 'vs/platform/log/common/log';
-import { IUserDataProfilesService } from 'vs/platform/userDataProfile/common/userDataProfile';
-import { IUriIdentityService } from 'vs/platform/uriIdentity/common/uriIdentity';
-import { Mutable, isObject, isString, isUndefined } from 'vs/base/common/types';
-import { getErrorMessage } from 'vs/base/common/errors';
-import { ITelemetryService } from 'vs/platform/telemetry/common/telemetry';
+import { Queue } from '../../../base/common/async.js';
+import { VSBuffer } from '../../../base/common/buffer.js';
+import { Disposable } from '../../../base/common/lifecycle.js';
+import { Emitter, Event } from '../../../base/common/event.js';
+import { ResourceMap } from '../../../base/common/map.js';
+import { URI, UriComponents } from '../../../base/common/uri.js';
+import { Metadata, isIExtensionIdentifier } from './extensionManagement.js';
+import { areSameExtensions } from './extensionManagementUtil.js';
+import { IExtension, IExtensionIdentifier } from '../../extensions/common/extensions.js';
+import { FileOperationResult, IFileService, toFileOperationResult } from '../../files/common/files.js';
+import { createDecorator } from '../../instantiation/common/instantiation.js';
+import { ILogService } from '../../log/common/log.js';
+import { IUserDataProfilesService } from '../../userDataProfile/common/userDataProfile.js';
+import { IUriIdentityService } from '../../uriIdentity/common/uriIdentity.js';
+import { Mutable, isObject, isString, isUndefined } from '../../../base/common/types.js';
+import { getErrorMessage } from '../../../base/common/errors.js';
+import { ITelemetryService } from '../../telemetry/common/telemetry.js';
 
 interface IStoredProfileExtension {
 	identifier: IExtensionIdentifier;
@@ -83,7 +83,7 @@ export interface IExtensionsProfileScannerService {
 	readonly onDidRemoveExtensions: Event<DidRemoveProfileExtensionsEvent>;
 
 	scanProfileExtensions(profileLocation: URI, options?: IProfileExtensionsScanOptions): Promise<IScannedProfileExtension[]>;
-	addExtensionsToProfile(extensions: [IExtension, Metadata | undefined][], profileLocation: URI): Promise<IScannedProfileExtension[]>;
+	addExtensionsToProfile(extensions: [IExtension, Metadata | undefined][], profileLocation: URI, keepExistingVersions?: boolean): Promise<IScannedProfileExtension[]>;
 	updateMetadata(extensions: [IExtension, Metadata | undefined][], profileLocation: URI): Promise<IScannedProfileExtension[]>;
 	removeExtensionFromProfile(extension: IExtension, profileLocation: URI): Promise<void>;
 }
@@ -120,26 +120,32 @@ export abstract class AbstractExtensionsProfileScannerService extends Disposable
 		return this.withProfileExtensions(profileLocation, undefined, options);
 	}
 
-	async addExtensionsToProfile(extensions: [IExtension, Metadata | undefined][], profileLocation: URI): Promise<IScannedProfileExtension[]> {
+	async addExtensionsToProfile(extensions: [IExtension, Metadata | undefined][], profileLocation: URI, keepExistingVersions?: boolean): Promise<IScannedProfileExtension[]> {
 		const extensionsToRemove: IScannedProfileExtension[] = [];
 		const extensionsToAdd: IScannedProfileExtension[] = [];
 		try {
-			await this.withProfileExtensions(profileLocation, profileExtensions => {
+			await this.withProfileExtensions(profileLocation, existingExtensions => {
 				const result: IScannedProfileExtension[] = [];
-				for (const extension of profileExtensions) {
-					if (extensions.some(([e]) => areSameExtensions(e.identifier, extension.identifier) && e.manifest.version !== extension.version)) {
-						// Remove the existing extension with different version
-						extensionsToRemove.push(extension);
-					} else {
-						result.push(extension);
+				if (keepExistingVersions) {
+					result.push(...existingExtensions);
+				} else {
+					for (const existing of existingExtensions) {
+						if (extensions.some(([e]) => areSameExtensions(e.identifier, existing.identifier) && e.manifest.version !== existing.version)) {
+							// Remove the existing extension with different version
+							extensionsToRemove.push(existing);
+						} else {
+							result.push(existing);
+						}
 					}
 				}
 				for (const [extension, metadata] of extensions) {
-					if (!result.some(e => areSameExtensions(e.identifier, extension.identifier) && e.version === extension.manifest.version)) {
-						// Add only if the same version of the extension is not already added
-						const extensionToAdd = { identifier: extension.identifier, version: extension.manifest.version, location: extension.location, metadata };
+					const index = result.findIndex(e => areSameExtensions(e.identifier, extension.identifier) && e.version === extension.manifest.version);
+					const extensionToAdd = { identifier: extension.identifier, version: extension.manifest.version, location: extension.location, metadata };
+					if (index === -1) {
 						extensionsToAdd.push(extensionToAdd);
 						result.push(extensionToAdd);
+					} else {
+						result.splice(index, 1, extensionToAdd);
 					}
 				}
 				if (extensionsToAdd.length) {
@@ -189,7 +195,6 @@ export abstract class AbstractExtensionsProfileScannerService extends Disposable
 
 	async removeExtensionFromProfile(extension: IExtension, profileLocation: URI): Promise<void> {
 		const extensionsToRemove: IScannedProfileExtension[] = [];
-		this._onRemoveExtensions.fire({ extensions: extensionsToRemove, profileLocation });
 		try {
 			await this.withProfileExtensions(profileLocation, profileExtensions => {
 				const result: IScannedProfileExtension[] = [];
@@ -252,12 +257,8 @@ export abstract class AbstractExtensionsProfileScannerService extends Disposable
 						// Extension in new format. No migration needed.
 						location = this.resolveExtensionLocation(e.relativeLocation);
 					} else if (isString(e.location)) {
-						// Extension in intermediate format. Migrate to new format.
-						location = this.resolveExtensionLocation(e.location);
-						migrate = true;
-						e.relativeLocation = e.location;
-						// retain old format so that old clients can read it
-						e.location = location.toJSON();
+						this.logService.warn(`Extensions profile: Ignoring extension with invalid location: ${e.location}`);
+						continue;
 					} else {
 						location = URI.revive(e.location);
 						const relativePath = this.toRelativePath(location);
@@ -266,6 +267,10 @@ export abstract class AbstractExtensionsProfileScannerService extends Disposable
 							migrate = true;
 							e.relativeLocation = relativePath;
 						}
+					}
+					if (isUndefined(e.metadata?.hasPreReleaseVersion) && e.metadata?.preRelease) {
+						migrate = true;
+						e.metadata.hasPreReleaseVersion = true;
 					}
 					extensions.push({
 						identifier: e.identifier,
@@ -301,7 +306,7 @@ export abstract class AbstractExtensionsProfileScannerService extends Disposable
 		type ErrorClassification = {
 			owner: 'sandy081';
 			comment: 'Information about the error that occurred while scanning';
-			code: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; isMeasurement: true; comment: 'error code' };
+			code: { classification: 'SystemMetaData'; purpose: 'FeatureInsight'; comment: 'error code' };
 		};
 		const error = new ExtensionsProfileScanningError(`Invalid extensions content in ${file.toString()}`, ExtensionsProfileScanningErrorCode.ERROR_INVALID_CONTENT);
 		this.telemetryService.publicLogError2<{ code: string }, ErrorClassification>('extensionsProfileScanningError', { code: error.code });

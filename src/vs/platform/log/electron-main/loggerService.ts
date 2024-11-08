@@ -3,12 +3,12 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { ResourceMap } from 'vs/base/common/map';
-import { URI } from 'vs/base/common/uri';
-import { Event } from 'vs/base/common/event';
-import { refineServiceDecorator } from 'vs/platform/instantiation/common/instantiation';
-import { DidChangeLoggersEvent, ILogger, ILoggerOptions, ILoggerResource, ILoggerService, LogLevel, isLogLevel } from 'vs/platform/log/common/log';
-import { LoggerService } from 'vs/platform/log/node/loggerService';
+import { ResourceMap } from '../../../base/common/map.js';
+import { URI } from '../../../base/common/uri.js';
+import { Event } from '../../../base/common/event.js';
+import { refineServiceDecorator } from '../../instantiation/common/instantiation.js';
+import { DidChangeLoggersEvent, ILogger, ILoggerOptions, ILoggerResource, ILoggerService, LogLevel, isLogLevel } from '../common/log.js';
+import { LoggerService } from '../node/loggerService.js';
 
 export const ILoggerMainService = refineServiceDecorator<ILoggerService, ILoggerMainService>(ILoggerService);
 
@@ -22,6 +22,8 @@ export interface ILoggerMainService extends ILoggerService {
 
 	createLogger(resource: URI, options?: ILoggerOptions, windowId?: number): ILogger;
 
+	createLogger(id: string, options?: Omit<ILoggerOptions, 'id'>, windowId?: number): ILogger;
+
 	registerLogger(resource: ILoggerResource, windowId?: number): void;
 
 	getRegisteredLoggers(windowId?: number): ILoggerResource[];
@@ -34,14 +36,14 @@ export class LoggerMainService extends LoggerService implements ILoggerMainServi
 
 	private readonly loggerResourcesByWindow = new ResourceMap<number>();
 
-	override createLogger(resource: URI, options?: ILoggerOptions, windowId?: number): ILogger {
+	override createLogger(idOrResource: URI | string, options?: ILoggerOptions, windowId?: number): ILogger {
 		if (windowId !== undefined) {
-			this.loggerResourcesByWindow.set(resource, windowId);
+			this.loggerResourcesByWindow.set(this.toResource(idOrResource), windowId);
 		}
 		try {
-			return super.createLogger(resource, options);
+			return super.createLogger(idOrResource, options);
 		} catch (error) {
-			this.loggerResourcesByWindow.delete(resource);
+			this.loggerResourcesByWindow.delete(this.toResource(idOrResource));
 			throw error;
 		}
 	}
